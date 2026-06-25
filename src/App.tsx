@@ -45,6 +45,7 @@ import { HQAudit } from '@/pages/hq/HQAudit';
 import { HQSettings } from '@/pages/hq/HQSettings';
 import { HQApprovals } from '@/pages/hq/HQApprovals';
 import { HQCommunications } from '@/pages/hq/HQCommunications';
+import { GapSealAudit } from '@/pages/hq/GapSealAudit';
 
 // Lifecycle Demo
 import { LifecycleDemo } from '@/pages/LifecycleDemo';
@@ -235,6 +236,13 @@ export default function App() {
           <ProtectedRoute allowedRoles={['coordinator', 'admin']}>
             <PortalLayout allowedRoles={['coordinator', 'admin']}>
               <HQCommunications />
+            </PortalLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/hq/gap-seal" element={
+          <ProtectedRoute allowedRoles={['coordinator', 'admin']}>
+            <PortalLayout allowedRoles={['coordinator', 'admin']}>
+              <GapSealAudit />
             </PortalLayout>
           </ProtectedRoute>
         } />

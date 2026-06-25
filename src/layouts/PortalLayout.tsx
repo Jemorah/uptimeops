@@ -65,6 +65,7 @@ const portalConfig: Record<string, { label: string; links: { label: string; path
       { label: 'Communications', path: '/hq/communications', icon: Mail },
       { label: 'Audit Log', path: '/hq/audit', icon: FileText },
       { label: 'AI Costs', path: '/hq', icon: Zap },
+      { label: 'Gap Seal Audit', path: '/hq/gap-seal', icon: ShieldCheck },
       { label: 'Settings', path: '/hq/settings', icon: Settings },
     ],
   },
