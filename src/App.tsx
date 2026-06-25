@@ -31,6 +31,7 @@ import { FixAIProgress } from '@/pages/temporary/FixAIProgress';
 // Engineer portal
 import { EngineerDashboard } from '@/pages/engineer/EngineerDashboard';
 import { EngineerWorkspace } from '@/pages/engineer/EngineerWorkspace';
+import { IncidentWorkspace } from '@/pages/engineer/IncidentWorkspace';
 import { EngineerSessions } from '@/pages/engineer/EngineerSessions';
 import { EngineerOnCall } from '@/pages/engineer/EngineerOnCall';
 import { EngineerAudit } from '@/pages/engineer/EngineerAudit';
@@ -168,6 +169,14 @@ export default function App() {
           <ProtectedRoute allowedRoles={['engineer', 'coordinator', 'admin']}>
             <PortalLayout allowedRoles={['engineer', 'coordinator', 'admin']}>
               <EngineerWorkspace />
+            </PortalLayout>
+          </ProtectedRoute>
+        } />
+        {/* NEW: Incident Workspace — 5-tab on-call interface */}
+        <Route path="/engineer/incident/:incidentId" element={
+          <ProtectedRoute allowedRoles={['engineer', 'coordinator', 'admin']}>
+            <PortalLayout allowedRoles={['engineer', 'coordinator', 'admin']}>
+              <IncidentWorkspace />
             </PortalLayout>
           </ProtectedRoute>
         } />
