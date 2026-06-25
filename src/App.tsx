@@ -41,6 +41,10 @@ import { HQIncidents } from '@/pages/hq/HQIncidents';
 import { HQEngineers } from '@/pages/hq/HQEngineers';
 import { HQAudit } from '@/pages/hq/HQAudit';
 import { HQSettings } from '@/pages/hq/HQSettings';
+import { HQApprovals } from '@/pages/hq/HQApprovals';
+
+// Lifecycle Demo
+import { LifecycleDemo } from '@/pages/LifecycleDemo';
 
 import { Toaster } from '@/components/ui/sonner';
 
@@ -160,6 +164,11 @@ export default function App() {
         } />
 
         {/* ═══════════════════════════════════════════
+            LIFECYCLE DEMO (public, no auth)
+        ═══════════════════════════════════════════ */}
+        <Route path="/lifecycle" element={<LifecycleDemo />} />
+
+        {/* ═══════════════════════════════════════════
             HQ CONTROL CENTER (coordinator/admin only)
         ═══════════════════════════════════════════ */}
         <Route path="/hq" element={
@@ -194,6 +203,13 @@ export default function App() {
           <ProtectedRoute allowedRoles={['coordinator', 'admin']}>
             <PortalLayout allowedRoles={['coordinator', 'admin']}>
               <HQSettings />
+            </PortalLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/hq/approvals" element={
+          <ProtectedRoute allowedRoles={['coordinator', 'admin']}>
+            <PortalLayout allowedRoles={['coordinator', 'admin']}>
+              <HQApprovals />
             </PortalLayout>
           </ProtectedRoute>
         } />

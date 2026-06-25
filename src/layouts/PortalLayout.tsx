@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   Zap, LayoutDashboard, AlertTriangle, Activity,
-  Settings, LogOut, ChevronLeft, Shield, Users, BarChart3,
+  Settings, LogOut, ChevronLeft, Shield, ShieldCheck, Users, BarChart3,
   Terminal, Clock, FileText, Bell, Lock, Code2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -57,6 +57,7 @@ const portalConfig: Record<string, { label: string; links: { label: string; path
     links: [
       { label: 'Dashboard', path: '/hq', icon: BarChart3 },
       { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle },
+      { label: 'Approvals', path: '/hq/approvals', icon: ShieldCheck },
       { label: 'Engineers', path: '/hq/engineers', icon: Users },
       { label: 'Audit Log', path: '/hq/audit', icon: FileText },
       { label: 'Settings', path: '/hq/settings', icon: Settings },
