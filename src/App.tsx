@@ -21,6 +21,7 @@ import { CustomerIncidents } from '@/pages/customer/CustomerIncidents';
 import { CustomerBilling } from '@/pages/customer/CustomerBilling';
 import { CustomerSettings } from '@/pages/customer/CustomerSettings';
 import { CustomerVault } from '@/pages/customer/CustomerVault';
+import { CustomerComms } from '@/pages/customer/CustomerComms';
 
 // Temporary fix portal
 import { FixDashboard } from '@/pages/temporary/FixDashboard';
@@ -42,6 +43,7 @@ import { HQEngineers } from '@/pages/hq/HQEngineers';
 import { HQAudit } from '@/pages/hq/HQAudit';
 import { HQSettings } from '@/pages/hq/HQSettings';
 import { HQApprovals } from '@/pages/hq/HQApprovals';
+import { HQCommunications } from '@/pages/hq/HQCommunications';
 
 // Lifecycle Demo
 import { LifecycleDemo } from '@/pages/LifecycleDemo';
@@ -106,6 +108,13 @@ export default function App() {
           <ProtectedRoute allowedRoles={['customer', 'coordinator', 'admin']}>
             <PortalLayout allowedRoles={['customer', 'coordinator', 'admin']}>
               <CustomerSettings />
+            </PortalLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/customer/comms" element={
+          <ProtectedRoute allowedRoles={['customer', 'coordinator', 'admin']}>
+            <PortalLayout allowedRoles={['customer', 'coordinator', 'admin']}>
+              <CustomerComms />
             </PortalLayout>
           </ProtectedRoute>
         } />
@@ -210,6 +219,13 @@ export default function App() {
           <ProtectedRoute allowedRoles={['coordinator', 'admin']}>
             <PortalLayout allowedRoles={['coordinator', 'admin']}>
               <HQApprovals />
+            </PortalLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/hq/communications" element={
+          <ProtectedRoute allowedRoles={['coordinator', 'admin']}>
+            <PortalLayout allowedRoles={['coordinator', 'admin']}>
+              <HQCommunications />
             </PortalLayout>
           </ProtectedRoute>
         } />

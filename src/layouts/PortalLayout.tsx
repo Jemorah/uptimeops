@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   Zap, LayoutDashboard, AlertTriangle, Activity,
   Settings, LogOut, ChevronLeft, Shield, ShieldCheck, Users, BarChart3,
-  Terminal, Clock, FileText, Bell, Lock, Code2
+  Terminal, Clock, FileText, Bell, Lock, Code2, Mail
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@/lib/supabase/client';
@@ -20,6 +20,7 @@ const portalConfig: Record<string, { label: string; links: { label: string; path
       { label: 'Dashboard', path: '/customer', icon: LayoutDashboard },
       { label: 'Incidents', path: '/customer/incidents', icon: AlertTriangle },
       { label: 'Credential Vault', path: '/customer/vault', icon: Lock },
+      { label: 'Communications', path: '/customer/comms', icon: Mail },
       { label: 'Subscription', path: '/customer/billing', icon: FileText },
       { label: 'Settings', path: '/customer/settings', icon: Settings },
     ],
@@ -59,6 +60,7 @@ const portalConfig: Record<string, { label: string; links: { label: string; path
       { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle },
       { label: 'Approvals', path: '/hq/approvals', icon: ShieldCheck },
       { label: 'Engineers', path: '/hq/engineers', icon: Users },
+      { label: 'Communications', path: '/hq/communications', icon: Mail },
       { label: 'Audit Log', path: '/hq/audit', icon: FileText },
       { label: 'Settings', path: '/hq/settings', icon: Settings },
     ],
