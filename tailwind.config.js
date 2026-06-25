@@ -48,6 +48,16 @@ module.exports = {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        void: "#050507",
+        surface: "#0a0a0c",
+        elevated: "#111114",
+        lime: "#d1ff00",
+        cyan: "#00f0ff",
+        magenta: "#ff0055",
+      },
+      fontFamily: {
+        mono: ['"JetBrains Mono"', '"Space Mono"', 'monospace'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         xl: "calc(var(--radius) + 4px)",
