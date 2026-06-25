@@ -1,146 +1,137 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ArrowLeft, Brain, Activity, CheckCircle, Clock } from 'lucide-react';
+import {
+  ArrowLeft, Radio, Zap, Shield, Clock
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Progress } from '@/components/ui/progress';
-
-const agents = [
-  {
-    name: 'TRIAGE',
-    status: 'completed',
-    confidence: 99,
-    started: '14:32:01',
-    completed: '14:32:02',
-    actions: ['Analyzed HTTP response', 'Classified failure mode', 'Assigned severity: medium', 'Routed to ISOLATE'],
-  },
-  {
-    name: 'ISOLATE',
-    status: 'completed',
-    confidence: 100,
-    started: '14:32:02',
-    completed: '14:32:08',
-    actions: ['Allocated VM-4821', 'Cloned repository', 'Installed dependencies', 'Started dev server'],
-  },
-  {
-    name: 'REPAIR',
-    status: 'completed',
-    confidence: 94,
-    started: '14:32:08',
-    completed: '14:32:15',
-    actions: ['Scanned build output', 'Found missing CSS import', 'Generated patch', 'Applied fix', 'Verified build'],
-  },
-  {
-    name: 'VALIDATE',
-    status: 'running',
-    confidence: 0,
-    started: '14:32:15',
-    completed: null,
-    actions: ['Running visual regression', 'Checking mobile viewport', 'Testing checkout flow'],
-  },
-  {
-    name: 'DEPLOY',
-    status: 'pending',
-    confidence: 0,
-    started: null,
-    completed: null,
-    actions: ['Waiting for validation'],
-  },
-  {
-    name: 'AUDIT',
-    status: 'pending',
-    confidence: 0,
-    started: null,
-    completed: null,
-    actions: ['Waiting for deployment'],
-  },
-];
+import { useAgentPipeline } from '@/hooks/useAgentPipeline';
+import { AgentPipeline } from '@/components/orchestration/AgentPipeline';
+import { AgentLogViewer } from '@/components/orchestration/AgentLogViewer';
+import { ConfidenceGauge } from '@/components/orchestration/ConfidenceGauge';
+import { TimeoutTimer } from '@/components/orchestration/TimeoutTimer';
+import { CostTracker } from '@/components/orchestration/CostTracker';
+import { EscalationPanel } from '@/components/orchestration/EscalationPanel';
+import type { AgentName } from '@/components/orchestration/types';
 
 export function FixAIProgress() {
   const { ticketId } = useParams<{ ticketId: string }>();
-  const completedAgents = agents.filter(a => a.status === 'completed').length;
+  const [selectedAgent, setSelectedAgent] = useState<AgentName | null>(null);
+  const {
+    incident,
+    isSimulating,
+    startSimulation,
+  } = useAgentPipeline({ autoSimulate: true, simulationSpeed: 3 });
 
   return (
     <div className="min-h-screen bg-void p-4 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
-          <Link to={`/fix/${ticketId}`} className="text-white/40 hover:text-white transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">AI PROGRESS</h1>
-            <p className="text-sm text-white/40 font-mono">{ticketId}</p>
-          </div>
-        </div>
-
-        {/* Overall Progress */}
-        <div className="bg-surface border border-white/5 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold uppercase tracking-wider text-white/40">Overall Progress</span>
-            <span className="text-sm font-mono text-lime">{completedAgents}/{agents.length} Agents</span>
-          </div>
-          <Progress value={(completedAgents / agents.length) * 100} className="h-3" />
-        </div>
-
-        {/* Agent Cards */}
-        <div className="space-y-4">
-          {agents.map((agent) => (
-            <div
-              key={agent.name}
-              className={`bg-surface border p-6 transition-all ${
-                agent.status === 'running' ? 'border-cyan/30 bg-cyan/5' :
-                agent.status === 'completed' ? 'border-green-500/20' :
-                'border-white/5'
-              }`}
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Link
+              to={`/fix/${ticketId}`}
+              className="text-white/40 hover:text-white transition-colors"
             >
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  {agent.status === 'completed' && <CheckCircle className="w-5 h-5 text-green-500" />}
-                  {agent.status === 'running' && <Activity className="w-5 h-5 text-cyan animate-pulse" />}
-                  {agent.status === 'pending' && <Clock className="w-5 h-5 text-white/20" />}
-                  <h3 className={`text-lg font-bold ${
-                    agent.status === 'running' ? 'text-cyan' :
-                    agent.status === 'completed' ? 'text-white' :
-                    'text-white/30'
-                  }`}>
-                    {agent.name}
-                  </h3>
-                </div>
-                <div className="flex items-center gap-4">
-                  {agent.confidence > 0 && (
-                    <div className="text-right">
-                      <div className="text-xs text-white/40">Confidence</div>
-                      <div className={`text-sm font-mono font-bold ${
-                        agent.confidence >= 90 ? 'text-green-500' : 'text-yellow-500'
-                      }`}>
-                        {agent.confidence}%
-                      </div>
-                    </div>
-                  )}
-                  <span className={`text-xs font-bold uppercase ${
-                    agent.status === 'completed' ? 'text-green-500' :
-                    agent.status === 'running' ? 'text-cyan' :
-                    'text-white/20'
-                  }`}>
-                    {agent.status}
-                  </span>
-                </div>
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Radio className="w-4 h-4 text-lime animate-pulse" />
+                <span className="text-xs font-mono text-lime uppercase tracking-widest">
+                  Live AI Pipeline
+                </span>
               </div>
+              <h1 className="text-2xl font-black tracking-tight">AI ORCHESTRATION</h1>
+              <p className="text-xs text-white/40 font-mono mt-1">
+                {ticketId} — {incident?.title.substring(0, 50)}...
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-lime/5 border border-lime/20 px-3 py-1.5">
+              <Shield className="w-3.5 h-3.5 text-lime" />
+              <span className="text-xs text-lime font-medium">Zero-Knowledge</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-white/40">
+              <Clock className="w-3.5 h-3.5" />
+              <span className="font-mono">{new Date().toLocaleTimeString()}</span>
+            </div>
+          </div>
+        </div>
 
-              <div className="flex items-center gap-4 text-xs font-mono text-white/40 mb-3">
-                {agent.started && <span>Started: {agent.started}</span>}
-                {agent.completed && <span>Completed: {agent.completed}</span>}
-              </div>
+        {incident && (
+          <>
+            {/* Escalation Alerts */}
+            <EscalationPanel incident={incident} />
 
-              <div className="space-y-1">
-                {agent.actions.map((action, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm text-white/60">
-                    <Brain className="w-3 h-3 text-white/20" />
-                    {action}
+            {/* Main Layout */}
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Left: Pipeline + Logs */}
+              <div className="lg:col-span-2 space-y-6">
+                {!isSimulating && (
+                  <div className="bg-surface border border-white/5 p-8 text-center">
+                    <Zap className="w-10 h-10 text-lime mx-auto mb-4 animate-pulse" />
+                    <h3 className="text-lg font-bold mb-2">AI Multi-Agent Pipeline</h3>
+                    <p className="text-sm text-white/40 mb-4 max-w-md mx-auto">
+                      Watch 6 AI agents work in concert: TRIAGE → ISOLATE → REPAIR → VALIDATE → DEPLOY → AUDIT
+                    </p>
+                    <button
+                      onClick={startSimulation}
+                      className="btn-lime text-sm px-6 py-2 rounded-sm"
+                    >
+                      Start Pipeline Demo
+                    </button>
                   </div>
-                ))}
+                )}
+
+                <AgentPipeline
+                  incident={incident}
+                  onSelectAgent={(agent) => setSelectedAgent(agent as AgentName)}
+                  selectedAgent={selectedAgent}
+                />
+                <AgentLogViewer
+                  agents={incident.agents}
+                  selectedAgent={selectedAgent}
+                />
+              </div>
+
+              {/* Right: Metrics */}
+              <div className="space-y-6">
+                {incident.agents.VALIDATE.confidence !== null && (
+                  <ConfidenceGauge score={incident.agents.VALIDATE.confidence} />
+                )}
+                <TimeoutTimer agents={incident.agents} />
+                <CostTracker incident={incident} />
+
+                {/* Security Notice */}
+                <div className="bg-surface border border-white/5 p-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white/40 mb-2 flex items-center gap-2">
+                    <Shield className="w-3.5 h-3.5 text-lime" />
+                    Security Status
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/40">Credentials</span>
+                      <span className="text-green-500 font-bold">ENCRYPTED</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/40">VM Isolation</span>
+                      <span className="text-green-500 font-bold">ACTIVE</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/40">Audit Trail</span>
+                      <span className="text-green-500 font-bold">LOGGING</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/40">Key Location</span>
+                      <span className="text-lime font-bold">BROWSER ONLY</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

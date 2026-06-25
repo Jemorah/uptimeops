@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   Zap, LayoutDashboard, AlertTriangle, Activity,
   Settings, LogOut, ChevronLeft, Shield, Users, BarChart3,
-  Terminal, Clock, FileText, Bell, Lock
+  Terminal, Clock, FileText, Bell, Lock, Code2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@/lib/supabase/client';
@@ -40,6 +40,16 @@ const portalConfig: Record<string, { label: string; links: { label: string; path
       { label: 'On-Call', path: '/engineer/oncall', icon: Clock },
       { label: 'Audit Trail', path: '/engineer/audit', icon: FileText },
       { label: 'Settings', path: '/engineer/settings', icon: Settings },
+    ],
+  },
+  workspace: {
+    label: 'Workspace',
+    links: [
+      { label: 'Back to Dashboard', path: '/engineer', icon: LayoutDashboard },
+      { label: 'VM Terminal', path: '/engineer/workspace/:incidentId', icon: Terminal },
+      { label: 'Code Editor', path: '/engineer/workspace/:incidentId', icon: Code2 },
+      { label: 'AI Logs', path: '/engineer/workspace/:incidentId', icon: Activity },
+      { label: 'Chat', path: '/engineer/workspace/:incidentId', icon: FileText },
     ],
   },
   hq: {
@@ -84,7 +94,10 @@ export function PortalLayout({ children, allowedRoles }: PortalLayoutProps) {
     return null;
   }
 
-  const portalKey = location.pathname.split('/')[1];
+  const pathParts = location.pathname.split('/');
+  const portalKey = pathParts[1] === 'engineer' && pathParts[2] === 'workspace'
+    ? 'workspace'
+    : pathParts[1];
   const config = portalConfig[portalKey] || portalConfig.customer;
 
   return (
