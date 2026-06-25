@@ -1,0 +1,199 @@
+# ═══════════════════════════════════════════════════════════════
+# CI/CD Pipeline — UptimeOps
+# GitHub Actions: Test → Build → Deploy → Smoke Test
+# ═══════════════════════════════════════════════════════════════
+
+name: CI/CD — UptimeOps
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ═══════════════════════════════════════════
+  # JOB 1: Type Check + Lint
+  # ═══════════════════════════════════════════
+  typecheck:
+    name: TypeScript \u0026 Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+  # ═══════════════════════════════════════════
+  # JOB 2: Build
+  # ═══════════════════════════════════════════
+  build:
+    name: Production Build
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.VITE_STRIPE_PUBLISHABLE_KEY }}
+          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ORG: ${{ secrets.VITE_SENTRY_ORG }}
+          VITE_SENTRY_PROJECT: ${{ secrets.VITE_SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  # ═══════════════════════════════════════════
+  # JOB 3: Deploy to Vercel (Production)
+  # ═══════════════════════════════════════════
+  deploy-prod:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' \u0026\u0026 github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Deploy to Vercel
+        uses: vercel/action-deploy@v1
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+
+  # ═══════════════════════════════════════════
+  # JOB 4: Deploy Edge Functions (Supabase)
+  # ═══════════════════════════════════════════
+  deploy-functions:
+    name: Deploy Edge Functions
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' \u0026\u0026 github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy Edge Functions
+        run: supabase functions deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_REF }}
+
+  # ═══════════════════════════════════════════
+  # JOB 5: Smoke Test
+  # ═══════════════════════════════════════════
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    needs: [deploy-prod, deploy-functions]
+    if: github.ref == 'refs/heads/main' \u0026\u0026 github.event_name == 'push'
+    steps:
+      - name: Wait for deployment
+        run: sleep 30
+
+      - name: Smoke test — Frontend
+        run: |
+          curl -f -s -o /dev/null -w "%{http_code}" https://uptimeops.com || exit 1
+          curl -f -s -o /dev/null -w "%{http_code}" https://uptimeops.com/pricing || exit 1
+          curl -f -s -o /dev/null -w "%{http_code}" https://uptimeops.com/emergency || exit 1
+
+      - name: Smoke test — Edge Functions
+        run: |
+          curl -f -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            ${{ secrets.VITE_SUPABASE_URL }}/functions/v1/ai-orchestrator || exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -X POST https://hooks.slack.com/services/${{ secrets.SLACK_WEBHOOK_URL }} \
+            -H 'Content-Type: application/json' \
+            -d '{"text": "\u274c UptimeOps deployment FAILED smoke test"}'
+
+  # ═══════════════════════════════════════════
+  # JOB 6: Security Scan (Snyk)
+  # ═══════════════════════════════════════════
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
