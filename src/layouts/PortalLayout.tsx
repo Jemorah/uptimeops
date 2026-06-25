@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   Zap, LayoutDashboard, AlertTriangle, Activity,
   Settings, LogOut, ChevronLeft, Shield, ShieldCheck, Users, BarChart3,
-  Terminal, Clock, FileText, Bell, Lock, Code2, Mail
+  Terminal, Clock, FileText, Bell, Lock, Code2, Mail, CreditCard
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@/lib/supabase/client';
@@ -59,9 +59,12 @@ const portalConfig: Record<string, { label: string; links: { label: string; path
       { label: 'Dashboard', path: '/hq', icon: BarChart3 },
       { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle },
       { label: 'Approvals', path: '/hq/approvals', icon: ShieldCheck },
+      { label: 'Customers', path: '/hq', icon: Users },
       { label: 'Engineers', path: '/hq/engineers', icon: Users },
+      { label: 'Subscriptions', path: '/hq', icon: CreditCard },
       { label: 'Communications', path: '/hq/communications', icon: Mail },
       { label: 'Audit Log', path: '/hq/audit', icon: FileText },
+      { label: 'AI Costs', path: '/hq', icon: Zap },
       { label: 'Settings', path: '/hq/settings', icon: Settings },
     ],
   },
