@@ -46,6 +46,17 @@
   }
 }
 
+@layer base {
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+  }
+}
+
 @layer components {
   .liquid-glass {
     background: rgba(255, 255, 255, 0.03);
