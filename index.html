@@ -3,7 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>UptimeOps</title>
+    <title>UptimeOps — AI Infrastructure Emergency Response</title>
+    <script>
+      window.onerror = function(msg, url, line, col, err) {
+        var root = document.getElementById('root');
+        if (root) root.innerHTML = '<div style="padding:20px;font-family:monospace;color:#d1ff00;background:#050507;white-space:pre-wrap;word-break:break-all;"><h2>Runtime Error</h2><p style="color:#ff0055">' + msg + '</p><p style="color:#00f0ff;font-size:11px">' + (err && err.stack ? err.stack : url + ':' + line) + '</p></div>';
+        return false;
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>

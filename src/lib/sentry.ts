@@ -8,12 +8,12 @@ import * as Sentry from '@sentry/react';
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
 
 export function initSentry() {
-  if (!SENTRY_DSN) {
-    console.warn('[Sentry] DSN not configured — skipping initialization');
-    return;
+  if (!SENTRY_DSN || SENTRY_DSN === 'undefined' || SENTRY_DSN === 'null') {
+    return; // silently skip in preview
   }
 
-  Sentry.init({
+  try {
+    Sentry.init({
     dsn: SENTRY_DSN,
     environment: import.meta.env.MODE, // 'development' | 'production'
     release: __APP_VERSION__,
@@ -58,6 +58,7 @@ export function initSentry() {
       'ChunkLoadError',
     ],
   });
+  } catch { /* sentry optional */ }
 }
 
 export function captureException(error: Error, context?: Record<string, unknown>) {

@@ -9,15 +9,32 @@ import type { Database } from './database.types';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing Supabase environment variables. ' +
-    'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.'
-  );
+// Graceful fallback when env vars are missing (preview/demo mode)
+function createMockClient() {
+  const warn = (method: string) => () => {
+    console.warn(`[Supabase] ${method}() called but VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY are not set. Connect your Supabase project to enable backend features.`);
+    return Promise.resolve({ data: null, error: null });
+  };
+  return {
+    auth: {
+      getUser: warn('auth.getUser'),
+      getSession: warn('auth.getSession'),
+      signOut: warn('auth.signOut'),
+      signInWithPassword: warn('auth.signInWithPassword'),
+      signInWithOtp: warn('auth.signInWithOtp'),
+      signUp: warn('auth.signUp'),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    },
+    from: () => ({ select: () => ({ eq: () => ({ single: warn('from.select') }), order: () => ({ limit: () => ({}) }), limit: () => ({}) }), insert: warn('from.insert'), update: warn('from.update'), delete: warn('from.delete') }),
+    channel: () => ({ on: () => ({ subscribe: () => ({}) }) }),
+    removeChannel: () => {},
+    rpc: warn('rpc'),
+  } as unknown as ReturnType<typeof createClient<Database>>;
 }
 
-// Main Supabase client with all features
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+export const supabase = (!supabaseUrl || !supabaseAnonKey)
+  ? createMockClient()
+  : createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
