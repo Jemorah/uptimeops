@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS pipeline_states (
   status          pipeline_status NOT NULL DEFAULT 'running',
   started_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
+  created_at      timestamptz NOT NULL DEFAULT now(),
   error_count     integer DEFAULT 0
 );
 
@@ -112,7 +113,8 @@ CREATE TABLE IF NOT EXISTS vm_commands (
   output          text,
   exit_code       integer,
   started_at      timestamptz,
-  completed_at    timestamptz
+  completed_at    timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_commands_vm ON vm_commands(vm_session_id);
@@ -145,7 +147,8 @@ CREATE TABLE IF NOT EXISTS smoke_tests (
   pipeline_id     text,
   results         jsonb DEFAULT '[]',
   overall_passed  boolean,
-  run_at          timestamptz NOT NULL DEFAULT now()
+  run_at          timestamptz NOT NULL DEFAULT now(),
+  created_at      timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_smoke_incident ON smoke_tests(incident_id);
