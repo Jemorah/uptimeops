@@ -7,32 +7,55 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ═══════════════════════════════════════════
--- ENUMS
+-- ENUMS (safe creation — re-runnable)
 -- ═══════════════════════════════════════════
 
-CREATE TYPE user_role AS ENUM ('public', 'customer', 'engineer', 'coordinator', 'admin');
-CREATE TYPE plan_tier AS ENUM ('guardian', 'sentinel', 'fortress');
-CREATE TYPE subscription_status AS ENUM ('active', 'paused', 'past_due', 'cancelled', 'trialing');
-CREATE TYPE incident_priority AS ENUM ('P1_CRITICAL', 'P2_HIGH', 'P3_MEDIUM', 'P4_LOW');
-CREATE TYPE incident_status AS ENUM (
-  'lead_capture', 'payment_pending', 'credential_submission',
-  'triage', 'isolate', 'repair', 'validate',
-  'coordinator_approval', 'deploy', 'smoke_test',
-  'verify_fix', 'continuous_monitor', 'resolved', 'closed'
-);
-CREATE TYPE pipeline_status AS ENUM ('running', 'awaiting_approval', 'completed', 'failed', 'escalated', 'rollback');
-CREATE TYPE escalation_status AS ENUM ('pending_assignment', 'assigned', 'acknowledged', 'in_progress', 'resolved');
-CREATE TYPE vm_status AS ENUM ('creating', 'running', 'destroyed', 'failed', 'timeout');
-CREATE_TYPE comm_channel AS ENUM ('email', 'sms', 'push', 'dashboard');
-CREATE_TYPE comm_type AS ENUM (
-  'incident_created', 'incident_resolved', 'approval_required',
-  'payment_succeeded', 'payment_failed', 'dunning_email',
-  'invoice_paid', 'credential_approval_request', 'credential_approved',
-  'credential_denied', 'ai_escalation', 'rollback_executed',
-  'renewal_reminder', 'exit_survey', 'overage_alert',
-  'temporary_access_granted', 'engineer_timeout', 'incident_assigned',
-  'fix_submitted', 'smoke_test_passed', 'smoke_test_failed'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    CREATE TYPE user_role AS ENUM ('public', 'customer', 'engineer', 'coordinator', 'admin');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'plan_tier') THEN
+    CREATE TYPE plan_tier AS ENUM ('guardian', 'sentinel', 'fortress');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
+    CREATE TYPE subscription_status AS ENUM ('active', 'paused', 'past_due', 'cancelled', 'trialing');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'incident_priority') THEN
+    CREATE TYPE incident_priority AS ENUM ('P1_CRITICAL', 'P2_HIGH', 'P3_MEDIUM', 'P4_LOW');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'incident_status') THEN
+    CREATE TYPE incident_status AS ENUM (
+      'lead_capture', 'payment_pending', 'credential_submission',
+      'triage', 'isolate', 'repair', 'validate',
+      'coordinator_approval', 'deploy', 'smoke_test',
+      'verify_fix', 'continuous_monitor', 'resolved', 'closed'
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pipeline_status') THEN
+    CREATE TYPE pipeline_status AS ENUM ('running', 'awaiting_approval', 'completed', 'failed', 'escalated', 'rollback');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'escalation_status') THEN
+    CREATE TYPE escalation_status AS ENUM ('pending_assignment', 'assigned', 'acknowledged', 'in_progress', 'resolved');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vm_status') THEN
+    CREATE TYPE vm_status AS ENUM ('creating', 'running', 'destroyed', 'failed', 'timeout');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'comm_channel') THEN
+    CREATE TYPE comm_channel AS ENUM ('email', 'sms', 'push', 'dashboard');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'comm_type') THEN
+    CREATE TYPE comm_type AS ENUM (
+      'incident_created', 'incident_resolved', 'approval_required',
+      'payment_succeeded', 'payment_failed', 'dunning_email',
+      'invoice_paid', 'credential_approval_request', 'credential_approved',
+      'credential_denied', 'ai_escalation', 'rollback_executed',
+      'renewal_reminder', 'exit_survey', 'overage_alert',
+      'temporary_access_granted', 'engineer_timeout', 'incident_assigned',
+      'fix_submitted', 'smoke_test_passed', 'smoke_test_failed'
+    );
+  END IF;
+END $$;
 
 -- ═══════════════════════════════════════════
 -- TABLE: user_roles

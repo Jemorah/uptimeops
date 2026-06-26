@@ -1,12 +1,21 @@
 # UptimeOps Database Migrations
 
-Complete PostgreSQL schema for the UptimeOps platform. Run these in order in the Supabase SQL Editor.
+Complete PostgreSQL schema for the UptimeOps platform.
 
-## Quick Start
+## Quick Start (Two Options)
 
-1. Go to your Supabase project Dashboard → SQL Editor
-2. Run each migration file in order (001 → 005)
-3. Verify with the validation output at the end of migration 005
+### Option A: Single File (Easiest — Recommended)
+Paste the entire contents of **`000_combined_clean.sql`** into your Supabase SQL Editor and click Run. This single file contains everything — tables, enums, functions, triggers, RLS policies, seed data, and realtime configuration — all with `IF NOT EXISTS` guards so it's safe to re-run.
+
+### Option B: Individual Migrations (5 Files)
+If you prefer granular control, run each file in order:
+1. `001_schema_core.sql` — Core tables and enums
+2. `002_schema_incidents.sql` — Incident pipeline tables
+3. `003_schema_audit_comms.sql` — Audit logs, communications, profiles
+4. `004_functions_cron.sql` — Cron jobs, storage, realtime
+5. `005_webhooks_seed.sql` — Webhooks, auto-log triggers, seed data
+
+All migration files use `IF NOT EXISTS` guards and gracefully degrade if optional extensions (like `pg_net`) are not available.
 
 ## Migration Order
 
@@ -122,8 +131,23 @@ Migration 005 includes realistic seed data:
 
 After running all migrations, configure these in the Supabase Dashboard:
 
-1. **Auth → URL Configuration**: Set Site URL to `https://uptimeops.com`
-2. **Auth → Email Templates**: Customize magic link email
-3. **Database → Webhooks**: Verify pg_net extension for HTTP webhooks
-4. **Storage**: Upload your logo to `reports` bucket
-5. **Settings → API**: Copy `anon` and `service_role` keys to your `.env`
+### Required
+
+1. **Auth → URL Configuration**: Set Site URL to your production domain
+2. **Settings → API**: Copy `anon` and `service_role` keys to your `.env` file
+
+### Optional (for full automation)
+
+3. **Database → Extensions**: Enable `pg_net` if you want cron jobs to call Edge Functions via HTTP
+4. **Database → Vault**: Store secrets securely for cron/webhook HTTP calls:
+   ```sql
+   -- Store your service role key (required for cron jobs + webhooks)
+   SELECT vault.create_secret('your-service-role-key-here', 'service_role_key');
+
+   -- Store your project ref for URL construction
+   SELECT vault.create_secret('your-project-ref', 'project_ref');
+   ```
+   Replace `your-project-ref` with the part before `.supabase.co` in your project URL.
+
+5. **Storage**: Upload your logo to the `reports` bucket
+6. **Auth → Email Templates**: Customize magic link email template
