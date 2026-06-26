@@ -1,114 +1,117 @@
 -- ═══════════════════════════════════════════════════════════════
--- MIGRATION 004: Functions, Cron Jobs, Storage, Realtime
+-- UPTIMEOPS MIGRATION 004: Functions, Cron Jobs, Storage
+-- Paste into Supabase SQL Editor → Click Run
 -- ═══════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════
--- HELPER: HTTP POST via pg_net (if available)
--- These cron jobs call Edge Functions. They use pg_net which
--- must be enabled in your Supabase project (Database > Extensions).
--- If pg_net is not available, the cron jobs will log a notice.
+-- DASHBOARD HELPER FUNCTIONS
 -- ═══════════════════════════════════════════
 
--- Enable pg_net extension for HTTP calls (ignore if not available)
-CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
-
--- Helper function for Edge Function HTTP calls
--- Uses Vault secrets for service role key (set via Dashboard > Vault)
-CREATE OR REPLACE FUNCTION cron_http_post(
-  endpoint text,
-  payload jsonb DEFAULT '{}'::jsonb
-) RETURNS bigint AS $$
+-- HQ Dashboard KPI aggregation
+CREATE OR REPLACE FUNCTION get_dashboard_metrics()
+RETURNS jsonb AS $$
 DECLARE
-  svc_key text;
-  project_ref text;
-  full_url text;
+  result jsonb;
 BEGIN
-  -- Try to get service role key from Vault (preferred)
-  BEGIN
-    SELECT decrypted_secret INTO svc_key
-    FROM vault.decrypted_secrets
-    WHERE name = 'service_role_key'
-    LIMIT 1;
-  EXCEPTION WHEN OTHERS THEN
-    svc_key := NULL;
-  END;
+  SELECT jsonb_build_object(
+    'total_customers', (SELECT count(*) FROM customers),
+    'active_subscriptions', (SELECT count(*) FROM subscriptions WHERE status IN ('active', 'trialing')),
+    'total_mrr', calculate_all_mrr(),
+    'open_incidents', (SELECT count(*) FROM incidents WHERE status NOT IN ('resolved', 'closed')),
+    'critical_incidents', (SELECT count(*) FROM incidents WHERE priority = 'P1_CRITICAL' AND status NOT IN ('resolved', 'closed')),
+    'pending_escalations', (SELECT count(*) FROM human_escalations WHERE status = 'pending_assignment'),
+    'running_vms', (SELECT count(*) FROM vm_sessions WHERE status = 'running'),
+    'active_engineers', (SELECT count(*) FROM engineer_profiles WHERE is_on_call = true),
+    'avg_resolution_minutes', (SELECT COALESCE(AVG(avg_resolution_minutes), 0) FROM engineer_profiles WHERE avg_resolution_minutes IS NOT NULL),
+    'churned_this_month', (SELECT count(*) FROM churn_events WHERE churned_at > date_trunc('month', now()))
+  ) INTO result;
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-  -- Fallback: try current_setting
-  IF svc_key IS NULL THEN
-    BEGIN
-      svc_key := current_setting('app.service_role_key', true);
-    EXCEPTION WHEN OTHERS THEN
-      svc_key := NULL;
-    END;
-  END IF;
+-- Engineer performance report
+CREATE OR REPLACE FUNCTION get_engineer_performance(p_engineer_id uuid)
+RETURNS jsonb AS $$
+DECLARE
+  result jsonb;
+BEGIN
+  SELECT jsonb_build_object(
+    'engineer_id', p_engineer_id,
+    'name', (SELECT name FROM engineer_profiles WHERE id = p_engineer_id),
+    'total_resolved', ep.total_resolved,
+    'avg_resolution_minutes', ep.avg_resolution_minutes,
+    'satisfaction_score', ep.satisfaction_score,
+    'active_incidents', ep.active_incident_count,
+    'is_on_call', ep.is_on_call,
+    'recent_incidents', (
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', i.id,
+        'title', i.title,
+        'status', i.status,
+        'priority', i.priority,
+        'created_at', i.created_at
+      ))
+      FROM incidents i
+      WHERE i.assigned_engineer_id = p_engineer_id
+      ORDER BY i.created_at DESC
+      LIMIT 10
+    )
+  ) INTO result
+  FROM engineer_profiles ep
+  WHERE ep.id = p_engineer_id;
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-  -- Try to get project ref for URL construction
-  BEGIN
-    SELECT decrypted_secret INTO project_ref
-    FROM vault.decrypted_secrets
-    WHERE name = 'project_ref'
-    LIMIT 1;
-  EXCEPTION WHEN OTHERS THEN
-    project_ref := current_setting('app.supabase_url', true);
-  END;
-
-  IF project_ref IS NULL THEN
-    RAISE NOTICE '[UptimeOps] Skipping cron job: project URL not configured. Set Vault secret or app.supabase_url';
-    RETURN 0;
-  END IF;
-
-  -- Build full URL (handle both full URLs and project refs)
-  IF project_ref LIKE 'http%' THEN
-    full_url := project_ref || '/functions/v1/' || endpoint;
-  ELSE
-    full_url := 'https://' || project_ref || '.supabase.co/functions/v1/' || endpoint;
-  END IF;
-
-  -- Check pg_net availability
-  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
-    RAISE NOTICE '[UptimeOps] pg_net extension not available. Install it via Database > Extensions to enable cron HTTP jobs.';
-    RETURN 0;
-  END IF;
-
-  -- Make HTTP POST call via pg_net
-  RETURN net.http_post(
-    url := full_url,
-    headers := jsonb_build_object(
-      'Authorization', 'Bearer ' || COALESCE(svc_key, ''),
-      'Content-Type', 'application/json'
+-- Customer health scoring (0-100)
+CREATE OR REPLACE FUNCTION get_customer_health(p_customer_id uuid)
+RETURNS jsonb AS $$ BEGIN
+  RETURN jsonb_build_object(
+    'customer_id', p_customer_id,
+    'health_score', GREATEST(0, 100
+      - (SELECT count(*) * 10 FROM incidents WHERE customer_id = p_customer_id AND status NOT IN ('resolved', 'closed'))
+      - CASE WHEN (SELECT status FROM subscriptions WHERE customer_id = p_customer_id ORDER BY created_at DESC LIMIT 1) = 'past_due' THEN 30 ELSE 0 END
+      - CASE WHEN (SELECT churn_risk_score FROM customers WHERE id = p_customer_id) > 70 THEN 20 ELSE 0 END
     ),
-    body := payload
+    'open_incidents', (SELECT count(*) FROM incidents WHERE customer_id = p_customer_id AND status NOT IN ('resolved', 'closed')),
+    'subscription_status', (SELECT status FROM subscriptions WHERE customer_id = p_customer_id ORDER BY created_at DESC LIMIT 1),
+    'days_since_last_incident', (SELECT EXTRACT(DAY FROM now() - MAX(created_at))::int FROM incidents WHERE customer_id = p_customer_id),
+    'incidents_this_month', (SELECT count(*) FROM incidents WHERE customer_id = p_customer_id AND created_at > date_trunc('month', now()))
   );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Archive expired temporary links
+CREATE OR REPLACE FUNCTION archive_expired_links()
+RETURNS integer AS $$
+DECLARE
+  archived_count integer;
+BEGIN
+  INSERT INTO temporary_links_archive
+  SELECT *, now() as archived_at
+  FROM temporary_links
+  WHERE status = 'active'
+    AND expires_at < now();
+
+  GET DIAGNOSTICS archived_count = ROW_COUNT;
+
+  UPDATE temporary_links
+  SET status = 'archived'
+  WHERE status = 'active'
+    AND expires_at < now();
+
+  RETURN archived_count;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ═══════════════════════════════════════════
 -- CRON JOBS
--- Note: pg_cron is pre-installed on managed Supabase.
--- These jobs gracefully degrade if pg_net or secrets are unavailable.
+-- Only schedules SQL-safe cleanup tasks.
+-- For HTTP calls to Edge Functions, configure Supabase
+-- Database Webhooks via the Dashboard instead.
 -- ═══════════════════════════════════════════
 
--- Daily subscription management (9:00 AM UTC)
-SELECT cron.schedule('subscription-daily', '0 9 * * *', $$
-  SELECT cron_http_post('subscription-manager', '{"action": "daily_cron"}'::jsonb) AS request_id;
-$$);
-
--- Engineer availability check every 2 minutes
-SELECT cron.schedule('engineer-check', '*/2 * * * *', $$
-  SELECT cron_http_post('engineer-availability', '{"action": "cron_check"}'::jsonb) AS request_id;
-$$);
-
--- Cleanup expired temporary links every 6 hours
-SELECT cron.schedule('cleanup-links', '0 */6 * * *', $$
-  SELECT cron_http_post('temporary-link-generator', '{"action": "cleanup_expired"}'::jsonb) AS request_id;
-$$);
-
--- Archive old temporary links daily at 3 AM
-SELECT cron.schedule('archive-links', '0 3 * * *', $$
-  SELECT cron_http_post('temporary-link-generator', '{"action": "archive_old"}'::jsonb) AS request_id;
-$$);
-
--- Auto-cleanup expired VM sessions every hour
+-- 1. Auto-cleanup expired VM sessions every hour
 SELECT cron.schedule('cleanup-vms', '0 * * * *', $$
   UPDATE vm_sessions
   SET status = 'timeout',
@@ -118,7 +121,7 @@ SELECT cron.schedule('cleanup-vms', '0 * * * *', $$
     AND created_at < now() - interval '4 hours';
 $$);
 
--- Auto-cleanup expired credential vault entries daily
+-- 2. Auto-cleanup expired credential vault entries daily
 SELECT cron.schedule('cleanup-credentials', '0 4 * * *', $$
   UPDATE credentials_vault
   SET revoked_at = now()
@@ -126,53 +129,74 @@ SELECT cron.schedule('cleanup-credentials', '0 4 * * *', $$
     AND expires_at < now();
 $$);
 
+-- 3. Archive old temporary links daily at 3 AM
+SELECT cron.schedule('archive-links', '0 3 * * *', $$
+  SELECT archive_expired_links();
+$$);
+
+-- 4. Reset monthly incident allowances (1st of month at midnight)
+SELECT cron.schedule('reset-allowances', '0 0 1 * *', $$
+  UPDATE subscriptions
+  SET incidents_used_this_period = 0
+  WHERE status IN ('active', 'trialing');
+$$);
+
+-- 5. Engineer heartbeat timeout (mark offline if no heartbeat for 5 min)
+SELECT cron.schedule('engineer-heartbeat', '*/5 * * * *', $$
+  UPDATE engineer_profiles
+  SET is_on_call = false
+  WHERE is_on_call = true
+    AND last_heartbeat_at < now() - interval '5 minutes';
+$$);
+
+-- 6. Auto-close resolved incidents after 24 hours
+SELECT cron.schedule('auto-close', '0 */6 * * *', $$
+  UPDATE incidents
+  SET status = 'closed',
+      closed_at = now()
+  WHERE status = 'resolved'
+    AND resolved_at < now() - interval '24 hours';
+$$);
+
+-- 7. Subscription expiry reminders (daily at 9 AM)
+SELECT cron.schedule('subscription-reminders', '0 9 * * *', $$
+  INSERT INTO notifications (customer_id, type, message)
+  SELECT customer_id, 'renewal_reminder',
+    'Your subscription expires in ' ||
+    EXTRACT(DAY FROM current_period_end - now())::text ||
+    ' days. Renew to avoid service interruption.'
+  FROM subscriptions
+  WHERE status = 'active'
+    AND current_period_end BETWEEN now() AND now() + interval '7 days';
+$$);
+
 -- ═══════════════════════════════════════════
 -- STORAGE BUCKETS
 -- ═══════════════════════════════════════════
-
--- Session recordings bucket (auto-cleanup after 90 days via lifecycle)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
-  'session-recordings',
-  'session-recordings',
-  false,
-  524288000,  -- 500MB max per file
+  'session-recordings', 'session-recordings', false, 524288000,
   ARRAY['video/webm', 'video/mp4', 'application/octet-stream']::text[]
 )
 ON CONFLICT (id) DO NOTHING;
 
--- Gap Seal audit evidence bucket
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
-  'audit-evidence',
-  'audit-evidence',
-  false,
-  104857600,  -- 100MB max per file
+  'audit-evidence', 'audit-evidence', false, 104857600,
   ARRAY['image/png', 'image/jpeg', 'application/pdf', 'text/plain']::text[]
 )
 ON CONFLICT (id) DO NOTHING;
 
 -- ═══════════════════════════════════════════
--- REALTIME CONFIGURATION
--- ═══════════════════════════════════════════
--- NOTE: Do NOT use ALTER PUBLICATION here — it calls realtime.topic_add()
--- which doesn't exist on all Supabase versions.
+-- NOTE: REALTIME ENABLEMENT
+-- Enable via Supabase Dashboard → Database → Replication
+-- Toggle ON for these tables:
+--   incidents, human_escalations, pipeline_states,
+--   notifications, engineer_profiles, vm_sessions,
+--   audit_logs, communications_log
 --
--- INSTEAD: Enable realtime via Supabase Dashboard:
---   Dashboard → Database → Replication → toggle ON for each table:
---   incidents, pipeline_states, human_escalations, vm_sessions,
---   audit_logs, communications_log, notifications
-
--- ═══════════════════════════════════════════
--- SUPABASE VAULT SECRET TEMPLATE
--- ═══════════════════════════════════════════
--- Run these via SQL Editor AFTER deployment to store secrets securely:
---
--- SELECT vault.create_secret('your-service-role-key', 'service_role_key');
--- SELECT vault.create_secret('your-project-ref', 'project_ref');
--- SELECT vault.create_secret('sk-...', 'stripe_secret_key');
--- SELECT vault.create_secret('re_...', 'resend_api_key');
--- SELECT vault.create_secret('your-antigravity-sdk-key', 'antigravity_api_key');
---
--- Replace with your actual secret values before running.
+-- NOTE: HTTP WEBHOOKS
+-- For incident-created / approval-needed / resolved webhooks,
+-- configure Supabase Database Webhooks via the Dashboard.
+-- This avoids pg_net dependency in SQL migrations.
 -- ═══════════════════════════════════════════

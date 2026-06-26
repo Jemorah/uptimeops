@@ -1,295 +1,155 @@
-// ═══════════════════════════════════════════════════════════════
-// FUNCTION 8: engineer-availability
-// Cron: Every 2 minutes — check online status, auto-escalate
-// Load balancing: round-robin assignment
-// Alert: SMS to lead coordinator if zero engineers on-call
-// ═══════════════════════════════════════════════════════════════
+// UptimeOps — Engineer Availability Manager
+// Tracks on-call status, auto-assignment, heartbeat monitoring, timeout handling
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
+import { getSupabaseClient } from '../_shared/supabase.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const FUNCTION = 'engineer-availability';
 
-const TWILIO_SID = Deno.env.get('TWILIO_SID')!;
-const TWILIO_TOKEN = Deno.env.get('TWILIO_TOKEN')!;
-const TWILIO_FROM = Deno.env.get('TWILIO_FROM')!;
-
-interface AvailabilityPayload {
-  action: 'cron_check' | 'assign_engineer' | 'set_presence' | 'get_online';
-  engineer_id?: string;
-  incident_id?: string;
-  escalation_id?: string;
-  presence?: 'online' | 'away' | 'offline';
-}
-
-// Round-robin assignment tracker (in-memory)
-let lastAssignedIndex = 0;
-
-async function checkAvailability() {
-  const now = new Date();
-  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-
-  // Get all engineers marked as "online" with recent heartbeat
-  const { data: onlineEngineers } = await supabase
-    .from('engineer_profiles')
-    .select('id, name, email, phone, level, last_heartbeat_at, is_on_call, active_incident_count')
-    .eq('is_on_call', true)
-    .gte('last_heartbeat_at', fiveMinutesAgo.toISOString())
-    .order('active_incident_count', { ascending: true })
-    .order('last_assigned_at', { ascending: true });
-
-  const onlineCount = onlineEngineers?.length || 0;
-
-  // Get pending escalations
-  const { data: pendingEscalations } = await supabase
-    .from('human_escalations')
-    .select('id, incident_id, assigned_engineer_id, created_at, status')
-    .eq('status', 'pending_assignment')
-    .order('created_at', { ascending: true });
-
-  const results = {
-    online_engineers: onlineCount,
-    pending_escalations: pendingEscalations?.length || 0,
-    assignments_made: 0,
-    alerts_sent: 0,
-    timestamp: now.toISOString(),
-  };
-
-  // ZERO engineers on-call → alert lead coordinator
-  if (onlineCount === 0) {
-    // Get lead coordinator
-    const { data: lead } = await supabase
-      .from('coordinator_profiles')
-      .select('phone, email, is_lead')
-      .eq('is_lead', true)
-      .single();
-
-    if (lead?.phone) {
-      await sendSMS(lead.phone, `URGENT: Zero engineers on-call at ${now.toISOString()}. ${pendingEscalations?.length || 0} escalations pending. Login to assign manually.`);
-      results.alerts_sent++;
-    }
-
-    // Also send to all coordinators
-    const { data: coordinators } = await supabase
-      .from('coordinator_profiles')
-      .select('phone')
-      .not('phone', 'is', null);
-
-    for (const coord of coordinators || []) {
-      if (coord.phone && coord.phone !== lead?.phone) {
-        await sendSMS(coord.phone, `ALERT: No engineers on-call. ${pendingEscalations?.length || 0} pending escalations need manual assignment.`);
-      }
-    }
-
-    return { ...results, alert: 'ZERO_ENGINEERS_ON_CALL' };
-  }
-
-  // Assign pending escalations to available engineers (round-robin, least-loaded)
-  if (onlineEngineers && pendingEscalations) {
-    const sortedEngineers = [...onlineEngineers].sort((a, b) => {
-      // Prioritize: lower active count, then least recently assigned
-      if ((a.active_incident_count || 0) !== (b.active_incident_count || 0)) {
-        return (a.active_incident_count || 0) - (b.active_incident_count || 0);
-      }
-      return new Date(a.last_assigned_at || 0).getTime() - new Date(b.last_assigned_at || 0).getTime();
-    });
-
-    for (const escalation of pendingEscalations) {
-      // Find best engineer (round-robin from sorted list)
-      const engineer = sortedEngineers[lastAssignedIndex % sortedEngineers.length];
-      lastAssignedIndex++;
-
-      if (!engineer) continue;
-
-      // Assign escalation
-      await supabase.from('human_escalations').update({
-        assigned_engineer_id: engineer.id,
-        status: 'assigned',
-        assigned_at: now.toISOString(),
-      }).eq('id', escalation.id);
-
-      // Update engineer load
-      await supabase.from('engineer_profiles').update({
-        active_incident_count: (engineer.active_incident_count || 0) + 1,
-        last_assigned_at: now.toISOString(),
-      }).eq('id', engineer.id);
-
-      // Notify engineer
-      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/communication-sender`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'incident_assigned',
-          entity_type: 'human_escalation',
-          entity_id: escalation.id,
-          channel: 'dashboard',
-          metadata: { engineer_id: engineer.id, incident_id: escalation.incident_id },
-        }),
-      });
-
-      results.assignments_made++;
-    }
-  }
-
-  // Check for timed-out engineer assignments (> 30 min without acknowledgment)
-  const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-  const { data: timedOut } = await supabase
-    .from('human_escalations')
-    .select('id, assigned_engineer_id, assigned_at')
-    .eq('status', 'assigned')
-    .lt('assigned_at', thirtyMinutesAgo.toISOString());
-
-  for (const escalation of timedOut || []) {
-    // Re-assign to another engineer
-    await supabase.from('human_escalations').update({
-      status: 'pending_assignment',
-      assigned_engineer_id: null,
-      reassigned_at: now.toISOString(),
-    }).eq('id', escalation.id);
-
-    // Notify coordinator
-    await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/communication-sender`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        type: 'engineer_timeout',
-        entity_type: 'human_escalation',
-        entity_id: escalation.id,
-        channel: 'dashboard',
-        metadata: { timed_out_engineer: escalation.assigned_engineer_id },
-      }),
-    });
-  }
-
-  if (timedOut && timedOut.length > 0) {
-    results.reassignments = timedOut.length;
-  }
-
-  return results;
-}
-
-async function assignEngineer(escalationId: string) {
-  const { data: escalation } = await supabase
-    .from('human_escalations')
-    .select('id, incident_id, status')
-    .eq('id', escalationId)
-    .single();
-
-  if (!escalation || escalation.status !== 'pending_assignment') {
-    return { success: false, error: 'Escalation not found or already assigned' };
-  }
-
-  // Get available engineers
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-  const { data: engineers } = await supabase
-    .from('engineer_profiles')
-    .select('id, active_incident_count')
-    .eq('is_on_call', true)
-    .gte('last_heartbeat_at', fiveMinutesAgo.toISOString())
-    .order('active_incident_count', { ascending: true });
-
-  if (!engineers || engineers.length === 0) {
-    return { success: false, error: 'No engineers available' };
-  }
-
-  // Pick least-loaded
-  const engineer = engineers[0];
-
-  await supabase.from('human_escalations').update({
-    assigned_engineer_id: engineer.id,
-    status: 'assigned',
-    assigned_at: new Date().toISOString(),
-  }).eq('id', escalationId);
-
-  return { success: true, engineer_id: engineer.id };
-}
-
-async function setPresence(engineerId: string, presence: string) {
-  const update: Record<string, unknown> = {
-    last_heartbeat_at: new Date().toISOString(),
-    is_on_call: presence === 'online',
-  };
-
-  if (presence === 'offline') {
-    update.is_on_call = false;
-  }
-
-  await supabase.from('engineer_profiles').update(update).eq('id', engineerId);
-
-  return { success: true, engineer_id: engineerId, presence };
-}
-
-async function sendSMS(phone: string, message: string) {
-  try {
-    await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${btoa(`${TWILIO_SID}:${TWILIO_TOKEN}`)}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({ From: TWILIO_FROM, To: phone, Body: message }),
-    });
-  } catch (e) {
-    console.error('SMS send failed:', e);
-  }
-}
-
-export default async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS' } });
-  }
-
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  const payload: AvailabilityPayload = await req.json();
+serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
 
   try {
-    let result: Record<string, unknown>;
+    const body = await req.json().catch(() => ({}));
+    const { action, engineer_id, incident_id } = body;
+    const supabase = getSupabaseClient(req);
 
-    switch (payload.action) {
-      case 'cron_check':
-        result = await checkAvailability();
-        break;
-      case 'assign_engineer':
-        if (!payload.escalation_id) {
-          return new Response(JSON.stringify({ error: 'Missing escalation_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-        }
-        result = await assignEngineer(payload.escalation_id);
-        break;
-      case 'set_presence':
-        if (!payload.engineer_id || !payload.presence) {
-          return new Response(JSON.stringify({ error: 'Missing engineer_id or presence' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-        }
-        result = await setPresence(payload.engineer_id, payload.presence);
-        break;
-      case 'get_online': {
-        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-        const { data } = await supabase
-          .from('engineer_profiles')
-          .select('id, name, level, active_incident_count, last_heartbeat_at')
-          .eq('is_on_call', true)
-          .gte('last_heartbeat_at', fiveMinAgo.toISOString());
-        result = { success: true, count: data?.length || 0, engineers: data };
-        break;
-      }
-      default:
-        return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    // Heartbeat ping from engineer
+    if (action === 'heartbeat') {
+      if (!engineer_id) return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
+
+      await supabase.from('engineer_profiles')
+        .update({ last_heartbeat_at: new Date().toISOString(), is_on_call: true })
+        .eq('id', engineer_id);
+
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
-    return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+    // Get available engineers
+    if (action === 'list_available') {
+      const { data: engineers } = await supabase.from('engineer_profiles')
+        .select('*')
+        .eq('is_on_call', true)
+        .order('active_incident_count', { ascending: true })
+        .limit(20);
 
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ engineers: engineers || [] }), { headers: corsHeaders });
+    }
+
+    // Auto-assign engineer to incident
+    if (action === 'auto_assign') {
+      if (!incident_id) return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
+
+      // Find least-loaded on-call engineer
+      const { data: engineer } = await supabase.from('engineer_profiles')
+        .select('*')
+        .eq('is_on_call', true)
+        .order('active_incident_count', { ascending: true })
+        .order('last_assigned_at', { ascending: true, nullsFirst: true })
+        .limit(1)
+        .single();
+
+      if (!engineer) {
+        // No engineer available — escalate
+        await supabase.from('human_escalations').insert({
+          incident_id, trigger_reason: 'no_engineer_available',
+          status: 'pending_assignment', reason: 'No on-call engineers available',
+        });
+        return new Response(JSON.stringify({ assigned: false, reason: 'No engineers available' }), { headers: corsHeaders });
+      }
+
+      // Assign engineer
+      await supabase.from('incidents')
+        .update({ assigned_engineer_id: engineer.id })
+        .eq('id', incident_id);
+
+      await supabase.from('engineer_profiles')
+        .update({
+          active_incident_count: (engineer.active_incident_count || 0) + 1,
+          last_assigned_at: new Date().toISOString(),
+        })
+        .eq('id', engineer.id);
+
+      await supabase.from('human_escalations')
+        .update({ assigned_engineer_id: engineer.id, status: 'assigned', assigned_at: new Date().toISOString() })
+        .eq('incident_id', incident_id)
+        .eq('status', 'pending_assignment');
+
+      logInfo(FUNCTION, 'Auto-assigned engineer', { incident_id, engineer_id: engineer.id, engineer: engineer.name });
+      return new Response(JSON.stringify({ assigned: true, engineer }), { headers: corsHeaders });
+    }
+
+    // Mark incident as resolved by engineer
+    if (action === 'resolve') {
+      if (!incident_id || !engineer_id) {
+        return new Response(JSON.stringify({ error: 'incident_id and engineer_id required' }), { status: 400, headers: corsHeaders });
+      }
+
+      await supabase.from('incidents')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+        .eq('id', incident_id);
+
+      // Decrement engineer's active count
+      const { data: eng } = await supabase.from('engineer_profiles').select('active_incident_count, total_resolved').eq('id', engineer_id).single();
+      if (eng) {
+        await supabase.from('engineer_profiles').update({
+          active_incident_count: Math.max(0, (eng.active_incident_count || 1) - 1),
+          total_resolved: (eng.total_resolved || 0) + 1,
+        }).eq('id', engineer_id);
+      }
+
+      // Mark escalation as resolved
+      await supabase.from('human_escalations')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+        .eq('incident_id', incident_id)
+        .eq('assigned_engineer_id', engineer_id);
+
+      return new Response(JSON.stringify({ resolved: true }), { headers: corsHeaders });
+    }
+
+    // Timeout engineer (coordinator action)
+    if (action === 'timeout_engineer') {
+      if (!engineer_id) return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
+
+      await supabase.from('engineer_profiles')
+        .update({ is_on_call: false, last_heartbeat_at: null })
+        .eq('id', engineer_id);
+
+      // Reassign their active incidents
+      const { data: activeIncidents } = await supabase.from('incidents')
+        .select('id').eq('assigned_engineer_id', engineer_id)
+        .not('status', 'in', '(resolved,closed)');
+
+      for (const inc of activeIncidents || []) {
+        await supabase.from('human_escalations').insert({
+          incident_id: inc.id, trigger_reason: 'engineer_timeout',
+          status: 'pending_assignment', reason: `Engineer ${engineer_id} timed out`,
+        });
+      }
+
+      await supabase.from('incidents')
+        .update({ assigned_engineer_id: null })
+        .eq('assigned_engineer_id', engineer_id)
+        .not('status', 'in', '(resolved,closed)');
+
+      return new Response(JSON.stringify({ timed_out: true, reassigned: activeIncidents?.length || 0 }), { headers: corsHeaders });
+    }
+
+    // Default: return engineer stats
+    const { data: allEngineers } = await supabase.from('engineer_profiles').select('*').order('is_on_call', { ascending: false });
+    const { count: pendingEscalations } = await supabase.from('human_escalations').select('*', { count: 'exact' }).eq('status', 'pending_assignment');
+
+    return new Response(JSON.stringify({
+      engineers: allEngineers || [],
+      pending_escalations: pendingEscalations || 0,
+      on_call_count: allEngineers?.filter((e: Record<string, unknown>) => e.is_on_call).length || 0,
+    }), { headers: corsHeaders });
+
+  } catch (err) {
+    logError(FUNCTION, 'Request failed', err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
-};
+});

@@ -1,149 +1,123 @@
-// ═══════════════════════════════════════════════════════════════
-// WEBHOOK: External Monitoring & Alert Integration
-// Handles: Uptime monitoring alerts (Pingdom, UptimeRobot, etc.)
-//          Security alerts (Snyk, Dependabot)
-//          Custom customer webhooks
-// ═══════════════════════════════════════════════════════════════
+// UptimeOps — Webhook Alert Handler
+// Processes external monitoring webhooks (Datadog, PagerDuty, custom) and creates incidents
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
+import { getSupabaseClient } from '../_shared/supabase.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const FUNCTION = 'webhook-alert';
 
-interface AlertPayload {
-  source: 'pingdom' | 'uptimerobot' | 'snyk' | 'custom';
-  website_url: string;
-  alert_type: 'down' | 'degraded' | 'security' | 'performance';
-  severity?: 'p1_critical' | 'p2_high' | 'p3_medium' | 'p4_low';
-  title: string;
-  description: string;
-  customer_id?: string;
-  subscription_id?: string;
+function detectPriority(title: string, severity?: string): string {
+  if (severity === 'critical' || /critical|p1|down|outage/.test(title.toLowerCase())) return 'P1_CRITICAL';
+  if (severity === 'warning' || /high|p2|error|fail/.test(title.toLowerCase())) return 'P2_HIGH';
+  return 'P3_MEDIUM';
 }
 
-export default async (req: Request) => {
-  const payload: AlertPayload = await req.json();
-  const startTime = Date.now();
+function extractWebsite(text: string): string | null {
+  const match = text.match(/(?:https?:\/\/)?([a-zA-Z0-9][-a-zA-Z0-9]*[a-zA-Z0-9]*\.[-a-zA-Z0-9.]+[a-zA-Z0-9])/);
+  return match ? match[1] : null;
+}
+
+serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
 
   try {
-    // Normalize severity
-    const severityMap: Record<string, string> = {
-      down: 'p1_critical',
-      degraded: 'p2_high',
-      security: 'p1_critical',
-      performance: 'p3_medium',
-    };
-    const severity = payload.severity || (severityMap[payload.alert_type] as any) || 'p3_medium';
+    const payload = await req.json().catch(() => ({}));
+    const source = req.headers.get('x-alert-source') || 'unknown';
+    const supabase = getSupabaseClient(req);
 
-    // Find customer by website URL if not provided
-    let customerId = payload.customer_id;
-    let subscriptionId = payload.subscription_id;
+    logInfo(FUNCTION, 'Alert received', { source, alert_id: payload.id || payload.alert_id || 'unknown' });
 
-    if (!customerId) {
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('email', req.headers.get('x-customer-email') || '')
-        .single();
+    // Normalize alert from different sources
+    let title: string;
+    let description: string;
+    let severity: string;
+    let website: string | null;
+    let customerIdentifier: string | null;
 
-      if (customer) {
-        customerId = customer.id;
-        const { data: sub } = await supabase
-          .from('subscriptions')
-          .select('id')
-          .eq('customer_id', customerId)
-          .eq('status', 'active')
-          .single();
-        if (sub) subscriptionId = sub.id;
-      }
+    switch (source) {
+      case 'datadog':
+        title = payload.title || 'Datadog Alert';
+        description = payload.message || payload.body || JSON.stringify(payload);
+        severity = payload.alert_type || 'warning';
+        website = extractWebsite(title + ' ' + description);
+        customerIdentifier = payload.tags?.find((t: string) => t.startsWith('customer:'))?.split(':')[1] || null;
+        break;
+      case 'pagerduty':
+        title = payload.incident?.title || 'PagerDuty Alert';
+        description = payload.incident?.description || payload.incident?.summary || JSON.stringify(payload);
+        severity = payload.incident?.urgency || 'high';
+        website = extractWebsite(title + ' ' + description);
+        customerIdentifier = null;
+        break;
+      default:
+        title = payload.title || payload.message || payload.alert_name || 'External Alert';
+        description = payload.description || payload.body || payload.details || JSON.stringify(payload);
+        severity = payload.severity || payload.priority || 'medium';
+        website = payload.website_url || extractWebsite(title + ' ' + description);
+        customerIdentifier = payload.customer_id || null;
     }
 
-    if (!customerId) {
-      return new Response(
-        JSON.stringify({ error: 'Customer not found. Provide customer_id or x-customer-email header.' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+    // Find customer
+    let customerId: string | null = customerIdentifier;
+    if (!customerId && website) {
+      const { data: customer } = await supabase.from('customers')
+        .select('id').ilike('website', `%${website}%`).limit(1).single();
+      if (customer) customerId = customer.id;
     }
 
-    // Check if incident already exists for this URL
-    const { data: existing } = await supabase
-      .from('incidents')
-      .select('id, status')
-      .eq('website_url', payload.website_url)
-      .in('status', ['open', 'in_progress', 'ai_repairing', 'human_escalated', 'coordinator_review'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    let incidentId: string;
-
-    if (existing) {
-      // Update existing incident
-      incidentId = existing.id;
-      await supabase.from('incidents').update({
-        status: 'in_progress',
-        updated_at: new Date().toISOString(),
-      }).eq('id', incidentId);
-
-      await supabase.from('audit_logs').insert({
-        entity_type: 'incident',
-        entity_id: incidentId,
-        action: 'alert_reopened',
-        performed_by_type: 'system',
-        metadata: { source: payload.source, alert_type: payload.alert_type },
-      });
-    } else {
-      // Create new incident
-      const { data: incident } = await supabase.from('incidents').insert({
-        subscription_id: subscriptionId,
-        customer_id: customerId,
-        status: 'open',
-        severity: severity as any,
-        title: payload.title,
-        description: payload.description,
-        website_url: payload.website_url,
+    // If no customer found, create as unassigned lead incident
+    if (!customerId) {
+      // Create a placeholder customer record for the lead
+      const { data: placeholderCustomer } = await supabase.from('customers').insert({
+        email: `alert-${Date.now()}@uptimeops.com`,
+        website: website || 'unknown',
+        status: 'lead',
+        plan: 'guardian',
+        mrr: 0,
       }).select().single();
-
-      incidentId = incident!.id;
+      customerId = placeholderCustomer?.id || '11111111-1111-1111-1111-111111111112'; // fallback to lead
     }
 
-    // Send notification
-    await supabase.from('communications').insert({
+    const priority = detectPriority(title, severity);
+
+    // Create incident
+    const { data: incident } = await supabase.from('incidents').insert({
       customer_id: customerId,
-      incident_id: incidentId,
-      channel: 'dashboard',
-      content: `Alert from ${payload.source}: ${payload.title}. Incident #${incidentId.substring(0, 8)} created.`,
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-    });
+      source_type: 'subscription',
+      title,
+      description,
+      website_url: website,
+      status: 'triage',
+      priority: priority as any,
+    }).select().single();
 
-    // Trigger TRIAGE agent
-    await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ai-triage`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ incident_id: incidentId, type: 'incident' }),
-    });
+    // Trigger AI orchestrator
+    try {
+      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ai-orchestrator`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ incident_id: incident?.id }),
+      });
+    } catch (e) {
+      logWarn(FUNCTION, 'Failed to trigger AI orchestrator', e);
+    }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        incident_id: incidentId,
-        severity,
-        processing_time_ms: Date.now() - startTime,
-      }),
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    logInfo(FUNCTION, 'Incident created from alert', { incident_id: incident?.id, priority, customer_id: customerId });
 
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(JSON.stringify({
+      incident_created: true,
+      incident_id: incident?.id,
+      priority,
+      customer_id: customerId,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  } catch (err) {
+    logError(FUNCTION, 'Alert processing failed', err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
-};
+});
+
+import { logWarn } from '../_shared/logger.ts';

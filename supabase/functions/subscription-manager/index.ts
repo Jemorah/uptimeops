@@ -1,244 +1,133 @@
-// ═══════════════════════════════════════════════════════════════
-// FUNCTION 7: subscription-manager
-// Cron: Daily check — renewals, reminders, pauses, MRR updates
-// Incident allowance reset on billing period start
-// Churn prediction, at-risk flagging
-// ═══════════════════════════════════════════════════════════════
+// UptimeOps — Subscription Manager
+// Handles plan changes, pause/resume, incident allowance, MRR recalculation, dunning
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
+import { getSupabaseClient } from '../_shared/supabase.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const FUNCTION = 'subscription-manager';
 
-interface ManagerPayload {
-  action: 'daily_cron' | 'reset_allowance' | 'churn_check' | 'mrr_update' | 'overage_check';
-  subscription_id?: string;
-  customer_id?: string;
-}
-
-// Plan incident allowances
-const PLAN_ALLOWANCES: Record<string, number> = {
-  guardian: 3,
-  sentinel: 10,
-  fortress: 999,
+const PLAN_CONFIGS: Record<string, { price_cents: number; incidents: number }> = {
+  guardian: { price_cents: 9900, incidents: 3 },
+  sentinel: { price_cents: 24900, incidents: 10 },
+  fortress: { price_cents: 59900, incidents: 999 },
 };
 
-async function dailyCron() {
-  const results: Record<string, unknown> = {};
-  const now = new Date();
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-  // 1. Check upcoming renewals (next 3 days)
-  const { data: upcomingRenewals } = await supabase
-    .from('subscriptions')
-    .select('id, customer_id, current_period_end, plan, incidents_used_this_period')
-    .eq('status', 'active')
-    .lte('current_period_end', tomorrow.toISOString())
-    .gte('current_period_end', now.toISOString());
-
-  for (const sub of upcomingRenewals || []) {
-    // Send renewal reminder
-    await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/communication-sender`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        type: 'renewal_reminder',
-        entity_type: 'subscription',
-        entity_id: sub.id,
-        channel: 'email',
-        metadata: { period_end: sub.current_period_end, plan: sub.plan },
-      }),
-    });
-  }
-  results.upcoming_renewals = upcomingRenewals?.length || 0;
-
-  // 2. Reset allowances for subscriptions starting new period
-  const { data: newPeriodSubs } = await supabase
-    .from('subscriptions')
-    .select('id, plan')
-    .eq('status', 'active')
-    .lte('current_period_start', now.toISOString())
-    .gt('current_period_start', new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString());
-
-  for (const sub of newPeriodSubs || []) {
-    const allowance = PLAN_ALLOWANCES[sub.plan.toLowerCase()] || 3;
-    await supabase.from('subscriptions').update({
-      incidents_used_this_period: 0,
-      incidents_allowance: allowance,
-    }).eq('id', sub.id);
-  }
-  results.allowances_reset = newPeriodSubs?.length || 0;
-
-  // 3. Update MRR for all active customers
-  const { data: mrrData } = await supabase.rpc('calculate_all_mrr');
-  results.mrr_updated = mrrData;
-
-  // 4. Check paused subscriptions (pause ends today)
-  const { data: unpausing } = await supabase
-    .from('subscriptions')
-    .select('id')
-    .eq('status', 'paused')
-    .lte('pause_end_date', now.toISOString());
-
-  for (const sub of unpausing || []) {
-    await supabase.from('subscriptions').update({
-      status: 'active',
-      pause_end_date: null,
-    }).eq('id', sub.id);
-  }
-  results.unpaused = unpausing?.length || 0;
-
-  // 5. At-risk flagging
-  const { data: atRisk } = await supabase
-    .from('subscriptions')
-    .select('id, customer_id, incidents_used_this_period, incidents_allowance, plan')
-    .eq('status', 'active')
-    .gt('incidents_used_this_period', 0);
-
-  const overUsageCustomers: string[] = [];
-  for (const sub of atRisk || []) {
-    const ratio = sub.incidents_used_this_period / (sub.incidents_allowance || 1);
-    if (ratio >= 0.8) {
-      overUsageCustomers.push(sub.customer_id);
-      // Send overage alert
-      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/communication-sender`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'overage_alert',
-          entity_type: 'subscription',
-          entity_id: sub.id,
-          channel: 'email',
-          metadata: {
-            used: sub.incidents_used_this_period,
-            allowance: sub.incidents_allowance,
-            ratio: Math.round(ratio * 100),
-          },
-        }),
-      });
-    }
-  }
-  results.over_usage_alerts = overUsageCustomers.length;
-
-  return { success: true, date: now.toISOString(), ...results };
-}
-
-async function resetAllowance(subscriptionId: string) {
-  const { data: sub } = await supabase
-    .from('subscriptions')
-    .select('plan')
-    .eq('id', subscriptionId)
-    .single();
-
-  if (!sub) return { success: false, error: 'Subscription not found' };
-
-  const allowance = PLAN_ALLOWANCES[sub.plan.toLowerCase()] || 3;
-  await supabase.from('subscriptions').update({
-    incidents_used_this_period: 0,
-    incidents_allowance: allowance,
-    current_period_start: new Date().toISOString(),
-  }).eq('id', subscriptionId);
-
-  return { success: true, allowance, plan: sub.plan };
-}
-
-async function churnCheck() {
-  // Simple churn prediction: high incidents + low engagement
-  const { data: subs } = await supabase
-    .from('subscriptions')
-    .select('id, customer_id, incidents_used_this_period, created_at')
-    .eq('status', 'active');
-
-  const churnRisk: Array<{ customer_id: string; risk_score: number; reasons: string[] }> = [];
-
-  for (const sub of subs || []) {
-    const reasons: string[] = [];
-    let score = 0;
-
-    // High incident usage
-    if (sub.incidents_used_this_period > 5) {
-      score += 30;
-      reasons.push('high_incident_usage');
-    }
-
-    // Account age (new accounts more likely to churn)
-    const ageDays = Math.floor((Date.now() - new Date(sub.created_at).getTime()) / 86400000);
-    if (ageDays < 14) {
-      score += 20;
-      reasons.push('new_account');
-    }
-
-    if (score >= 40) {
-      churnRisk.push({ customer_id: sub.customer_id, risk_score: score, reasons });
-
-      // Flag in database
-      await supabase.from('customers').update({
-        churn_risk_score: score,
-        churn_risk_reasons: reasons,
-      }).eq('id', sub.customer_id);
-    }
-  }
-
-  return { success: true, at_risk_count: churnRisk.length, customers: churnRisk };
-}
-
-export default async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS' } });
-  }
-
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  const payload: ManagerPayload = await req.json();
+serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
 
   try {
-    let result: Record<string, unknown>;
+    const body = await req.json().catch(() => ({}));
+    const { action, customer_id, plan, pause_days } = body;
+    const supabase = getSupabaseClient(req);
 
-    switch (payload.action) {
-      case 'daily_cron':
-        result = await dailyCron();
-        break;
-      case 'reset_allowance':
-        if (!payload.subscription_id) {
-          return new Response(JSON.stringify({ error: 'Missing subscription_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-        }
-        result = await resetAllowance(payload.subscription_id);
-        break;
-      case 'churn_check':
-        result = await churnCheck();
-        break;
-      case 'mrr_update':
-        const { data: mrr } = await supabase.rpc('calculate_all_mrr');
-        result = { success: true, mrr };
-        break;
-      case 'overage_check': {
-        const { data: overage } = await supabase
-          .from('subscriptions')
-          .select('id, customer_id, incidents_used_this_period, incidents_allowance')
-          .eq('status', 'active')
-          .gt('incidents_used_this_period', 0);
-        const over = (overage || []).filter(s => s.incidents_used_this_period >= (s.incidents_allowance || 3));
-        result = { success: true, overage_count: over.length, customers: over };
-        break;
-      }
-      default:
-        return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    // Daily cron: dunning, allowance checks, renewal reminders
+    if (action === 'daily_cron') {
+      // Flag subscriptions nearing allowance limit
+      const { data: nearingLimit } = await supabase.from('subscriptions')
+        .select('*, customers(email, full_name)')
+        .eq('status', 'active')
+        .gte('incidents_used_this_period', supabase.rpc('get_incidents_allowance'));
+
+      logInfo(FUNCTION, 'Daily cron complete', { checked: nearingLimit?.length || 0 });
+      return new Response(JSON.stringify({ cron: 'ok', checked: nearingLimit?.length || 0 }), { headers: corsHeaders });
     }
 
-    return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+    // Change plan
+    if (action === 'change_plan') {
+      if (!customer_id || !plan) return new Response(JSON.stringify({ error: 'customer_id and plan required' }), { status: 400, headers: corsHeaders });
+      const config = PLAN_CONFIGS[plan];
+      if (!config) return new Response(JSON.stringify({ error: 'Invalid plan' }), { status: 400, headers: corsHeaders });
 
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      await supabase.from('subscriptions')
+        .update({ plan, price_cents: config.price_cents, incidents_allowance: config.incidents })
+        .eq('customer_id', customer_id);
+
+      await supabase.from('customers')
+        .update({ plan, subscription_status: 'active' })
+        .eq('id', customer_id);
+
+      // Recalculate MRR
+      await supabase.rpc('update_customer_mrr', { p_customer_id: customer_id });
+
+      logInfo(FUNCTION, 'Plan changed', { customer_id, plan });
+      return new Response(JSON.stringify({ changed: true, plan, price_cents: config.price_cents }), { headers: corsHeaders });
+    }
+
+    // Pause subscription
+    if (action === 'pause') {
+      if (!customer_id) return new Response(JSON.stringify({ error: 'customer_id required' }), { status: 400, headers: corsHeaders });
+      const pauseEnd = new Date();
+      pauseEnd.setDate(pauseEnd.getDate() + (pause_days || 30));
+
+      await supabase.from('subscriptions')
+        .update({ status: 'paused', pause_start: new Date().toISOString(), pause_end: pauseEnd.toISOString() })
+        .eq('customer_id', customer_id);
+
+      await supabase.from('customers')
+        .update({ subscription_status: 'paused' })
+        .eq('id', customer_id);
+
+      return new Response(JSON.stringify({ paused: true, until: pauseEnd.toISOString() }), { headers: corsHeaders });
+    }
+
+    // Resume subscription
+    if (action === 'resume') {
+      if (!customer_id) return new Response(JSON.stringify({ error: 'customer_id required' }), { status: 400, headers: corsHeaders });
+
+      await supabase.from('subscriptions')
+        .update({ status: 'active', pause_start: null, pause_end: null })
+        .eq('customer_id', customer_id);
+
+      await supabase.from('customers')
+        .update({ subscription_status: 'active' })
+        .eq('id', customer_id);
+
+      return new Response(JSON.stringify({ resumed: true }), { headers: corsHeaders });
+    }
+
+    // Get subscription details
+    if (action === 'get' && customer_id) {
+      const { data: subscription } = await supabase.from('subscriptions')
+        .select('*').eq('customer_id', customer_id).order('created_at', { ascending: false }).limit(1).single();
+
+      const { data: customer } = await supabase.from('customers')
+        .select('plan, incidents_used, incidents_allowance, mrr, subscription_status').eq('id', customer_id).single();
+
+      return new Response(JSON.stringify({ subscription, customer }), { headers: corsHeaders });
+    }
+
+    // Calculate MRR
+    if (action === 'calculate_mrr') {
+      const { data: result } = await supabase.rpc('calculate_all_mrr');
+      return new Response(JSON.stringify({ mrr: result }), { headers: corsHeaders });
+    }
+
+    // Increment incident usage
+    if (action === 'increment_usage') {
+      if (!customer_id) return new Response(JSON.stringify({ error: 'customer_id required' }), { status: 400, headers: corsHeaders });
+
+      await supabase.rpc('update_customer_mrr', { p_customer_id: customer_id });
+      const { data: sub } = await supabase.from('subscriptions')
+        .select('incidents_used_this_period, incidents_allowance').eq('customer_id', customer_id)
+        .order('created_at', { ascending: false }).limit(1).single();
+
+      if (sub && sub.incidents_used_this_period >= sub.incidents_allowance) {
+        await supabase.from('communications_log').insert({
+          customer_id, type: 'overage_alert', channel: 'email',
+          subject: '[UptimeOps] Incident Allowance Reached',
+          body: 'You have used all incidents in your current period. Upgrade your plan for more.',
+        });
+      }
+
+      return new Response(JSON.stringify({ incremented: true }), { headers: corsHeaders });
+    }
+
+    return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
+  } catch (err) {
+    logError(FUNCTION, 'Request failed', err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
-};
+});

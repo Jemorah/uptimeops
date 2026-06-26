@@ -42,3 +42,4 @@ coverage
 .eslintcache
 .stylelintcache
 *.tsbuildinfo
+supabase_backup_*

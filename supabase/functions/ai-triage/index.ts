@@ -1,170 +1,108 @@
-// ═══════════════════════════════════════════════════════════════
-// AI AGENT 1: TRIAGE
-// Classifies incoming emergency incidents
-// Runs on: New incident insert, new one-time fix paid
-// Output: incident.status = 'in_progress', severity confirmed
-// ═══════════════════════════════════════════════════════════════
+// UptimeOps — AI Triage Agent
+// Analyzes incident severity, categorizes root cause, assigns priority
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
+import { getSupabaseClient } from '../_shared/supabase.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const FUNCTION = 'ai-triage';
 
-interface TriagePayload {
-  incident_id?: string;
-  fix_id?: string;
-  type: 'incident' | 'one_time_fix';
+interface TriageResult {
+  priority: string;
+  category: string;
+  estimated_fix_minutes: number;
+  requires_human: boolean;
+  confidence: number;
+  analysis: string;
 }
 
-export default async (req: Request) => {
-  const payload: TriagePayload = await req.json();
-  const startTime = Date.now();
+function analyzeIncident(title: string, description: string): TriageResult {
+  const text = (title + ' ' + description).toLowerCase();
+  let priority = 'P3_MEDIUM';
+  let category = 'general';
+  let requires_human = false;
+  let fixMinutes = 60;
+
+  // Priority heuristics
+  if (/down|offline|unreachable|502|503|crash|corrupt/.test(text)) {
+    priority = 'P1_CRITICAL';
+    category = 'outage';
+    fixMinutes = 30;
+    requires_human = true;
+  } else if (/slow|timeout|performance|memory|cpu|leak/.test(text)) {
+    priority = 'P2_HIGH';
+    category = 'performance';
+    fixMinutes = 45;
+  } else if (/ssl|certificate|expired/.test(text)) {
+    priority = 'P2_HIGH';
+    category = 'security';
+    fixMinutes = 15;
+  } else if (/config|nginx|docker|restart/.test(text)) {
+    priority = 'P3_MEDIUM';
+    category = 'configuration';
+    fixMinutes = 30;
+  }
+
+  // Data-driven confidence
+  const signals = [
+    /database|postgres|mysql|redis/.test(text),
+    /nginx|apache|load.?balancer/.test(text),
+    /docker|kubernetes|container/.test(text),
+    /ssl|cert|https/.test(text),
+    /memory|cpu|disk|resource/.test(text),
+  ].filter(Boolean).length;
+
+  const confidence = Math.min(95, 60 + signals * 7);
+
+  return {
+    priority,
+    category,
+    estimated_fix_minutes: fixMinutes,
+    requires_human: requires_human || confidence < 75,
+    confidence,
+    analysis: `Detected ${category} issue with ${signals} confidence signals. Estimated resolution: ${fixMinutes} minutes.`,
+  };
+}
+
+serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
 
   try {
-    // ── TRIAGE LOGIC ──
-    // 1. Analyze website URL (check if reachable)
-    // 2. Parse issue description for keyword classification
-    // 3. Determine severity based on impact signals
-    // 4. Set initial AI confidence
-    // 5. Write audit log
-    // 6. Trigger ISOLATE agent
+    const { incident_id, title, description } = await req.json();
+    if (!incident_id) return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
 
-    let entity: any;
-    let updateTable: string;
-    let entityId: string;
+    const supabase = getSupabaseClient(req);
 
-    if (payload.type === 'incident' && payload.incident_id) {
-      const { data } = await supabase
-        .from('incidents')
-        .select('*')
-        .eq('id', payload.incident_id)
-        .single();
-      entity = data;
-      updateTable = 'incidents';
-      entityId = payload.incident_id;
-    } else if (payload.type === 'one_time_fix' && payload.fix_id) {
-      const { data } = await supabase
-        .from('one_time_fixes')
-        .select('*')
-        .eq('id', payload.fix_id)
-        .single();
-      entity = data;
-      updateTable = 'one_time_fixes';
-      entityId = payload.fix_id;
-    } else {
-      throw new Error('Invalid payload: need incident_id or fix_id');
+    // Get incident if not provided
+    let incidentTitle = title;
+    let incidentDesc = description;
+    if (!incidentTitle) {
+      const { data: incident } = await supabase.from('incidents').select('title, description').eq('id', incident_id).single();
+      if (incident) { incidentTitle = incident.title; incidentDesc = incident.description; }
     }
 
-    if (!entity) throw new Error('Entity not found');
+    const result = analyzeIncident(incidentTitle || '', incidentDesc || '');
 
-    // Keyword-based classification
-    const description = (entity.description || entity.issue_description || '').toLowerCase();
-    const url = entity.website_url || '';
+    // Update incident
+    await supabase.from('incidents').update({
+      priority: result.priority as any,
+      ai_confidence: result.confidence,
+      status: 'isolate',
+    }).eq('id', incident_id);
 
-    const categoryKeywords: Record<string, string[]> = {
-      malware: ['malware', 'virus', 'hacked', 'infected', 'backdoor', 'shell'],
-      plugin_conflict: ['plugin', 'conflict', 'compatibility', 'update broke', 'after update'],
-      broken_code: ['error', 'fatal', 'syntax', 'exception', 'crash', 'bug'],
-      ddos: ['ddos', 'traffic spike', 'overwhelmed', 'attack', 'flood'],
-      firewall: ['firewall', 'blocked', 'waf', '403', ' Forbidden', 'ip blocked'],
-      performance: ['slow', 'timeout', 'memory', 'cpu', 'performance', 'lag'],
-    };
-
-    let detectedCategory = 'other';
-    let maxMatches = 0;
-    for (const [cat, keywords] of Object.entries(categoryKeywords)) {
-      const matches = keywords.filter(kw => description.includes(kw)).length;
-      if (matches > maxMatches) {
-        maxMatches = matches;
-        detectedCategory = cat;
-      }
-    }
-
-    // Severity boosters
-    const isCriticalKeywords = ['down', 'offline', 'unavailable', '500', '502', '503', 'error establishing'];
-    const isHighKeywords = ['slow', 'broken', 'not working', 'failed'];
-
-    let severity = entity.severity || 'p3_medium';
-    if (isCriticalKeywords.some(kw => description.includes(kw))) {
-      severity = 'p1_critical';
-    } else if (isHighKeywords.some(kw => description.includes(kw))) {
-      severity = 'p2_high';
-    }
-
-    // Calculate initial confidence based on signal clarity
-    const signalClarity = Math.min(95, 50 + maxMatches * 15 + (description.length > 50 ? 10 : 0));
-
-    // Update entity
-    if (updateTable === 'incidents') {
-      await supabase.from('incidents').update({
-        status: 'in_progress',
-        severity,
-        ai_confidence_score: signalClarity,
-        updated_at: new Date().toISOString(),
-      }).eq('id', entityId);
-    } else {
-      await supabase.from('one_time_fixes').update({
-        status: 'triage',
-        issue_category: detectedCategory,
-        ai_confidence_score: signalClarity,
-        updated_at: new Date().toISOString(),
-      }).eq('id', entityId);
-    }
-
-    // Write audit log
+    // Log to audit
     await supabase.from('audit_logs').insert({
-      entity_type: payload.type === 'incident' ? 'incident' : 'one_time_fix',
-      entity_id: entityId,
-      action: 'triage_complete',
-      performed_by_type: 'ai_agent',
-      metadata: {
-        detected_category: detectedCategory,
-        severity_assigned: severity,
-        confidence_score: signalClarity,
-        triage_duration_ms: Date.now() - startTime,
-        keyword_matches: maxMatches,
-      },
+      table_name: 'incidents', entity_type: 'incident', entity_id: incident_id,
+      action: 'ai_triage_complete', performed_by_type: 'ai',
+      new_values: result,
     });
 
-    // Trigger ISOLATE agent via queue or direct call
-    await supabase.from('audit_logs').insert({
-      entity_type: payload.type === 'incident' ? 'incident' : 'one_time_fix',
-      entity_id: entityId,
-      action: 'trigger_isolate',
-      performed_by_type: 'system',
-      metadata: { trigger_reason: 'triage_complete' },
-    });
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        agent: 'TRIAGE',
-        duration_ms: Date.now() - startTime,
-        result: {
-          category: detectedCategory,
-          severity,
-          confidence: signalClarity,
-        },
-      }),
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-    await supabase.from('audit_logs').insert({
-      entity_type: payload.type === 'incident' ? 'incident' : 'one_time_fix',
-      entity_id: payload.incident_id || payload.fix_id,
-      action: 'triage_failed',
-      performed_by_type: 'system',
-      metadata: { error: errorMessage },
-    });
-
-    return new Response(
-      JSON.stringify({ success: false, agent: 'TRIAGE', error: errorMessage }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    logInfo(FUNCTION, 'Triage complete', { incident_id, priority: result.priority, confidence: result.confidence });
+    return new Response(JSON.stringify(result), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  } catch (err) {
+    logError(FUNCTION, 'Triage failed', err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
-};
+});

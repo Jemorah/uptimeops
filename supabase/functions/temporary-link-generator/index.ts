@@ -1,268 +1,133 @@
-// ═══════════════════════════════════════════════════════════════
-// FUNCTION 9: temporary-link-generator
-// Trigger: Incident status = 'completed'
-// Actions: Generate 64-char token, 72h expiry, store hash
-// Send email with link, log to communications table
-// Cron: Delete token after 72h, archive after 30 days
-// ═══════════════════════════════════════════════════════════════
+// UptimeOps — Temporary Link Generator
+// Creates time-limited, single-use access tokens for credential decryption
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createHash } from 'https://deno.land/std@0.224.0/crypto/mod.ts';
+import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
+import { getSupabaseClient } from '../_shared/supabase.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const FUNCTION = 'temporary-link-generator';
 
-const TOKEN_EXPIRY_MS = 72 * 60 * 60 * 1000; // 72 hours
-const ARCHIVE_AFTER_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-interface LinkPayload {
-  action: 'generate' | 'validate' | 'revoke' | 'cleanup_expired' | 'archive_old';
-  incident_id?: string;
-  fix_id?: string;
-  customer_id?: string;
-  token?: string;
-  dashboard_url?: string;
+async function hashToken(token: string): Promise<string> {
+  const data = new TextEncoder().encode(token + (Deno.env.get('TOKEN_SALT') || 'uptimeops-default-salt'));
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function generateToken(payload: LinkPayload) {
-  if (!payload.incident_id && !payload.fix_id) {
-    return { success: false, error: 'Missing incident_id or fix_id' };
-  }
-  if (!payload.customer_id) {
-    return { success: false, error: 'Missing customer_id' };
-  }
-
-  const entityId = payload.incident_id || payload.fix_id!;
-  const entityType = payload.incident_id ? 'incident' : 'one_time_fix';
-
-  // Generate 64-char random token
-  const randomBytes = new Uint8Array(48);
-  crypto.getRandomValues(randomBytes);
-  const token = Array.from(randomBytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 64);
-
-  // Store hash (never store raw token)
-  const tokenHash = await sha256(token);
-  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MS);
-
-  const { data: linkRecord } = await supabase.from('temporary_links').insert({
-    token_hash: tokenHash,
-    entity_type: entityType,
-    entity_id: entityId,
-    customer_id: payload.customer_id,
-    expires_at: expiresAt.toISOString(),
-    access_count: 0,
-    status: 'active',
-  }).select().single();
-
-  if (!linkRecord) {
-    return { success: false, error: 'Failed to create temporary link' };
-  }
-
-  // Build URL (token is in the URL, hash is in DB)
-  const baseUrl = Deno.env.get('FRONTEND_URL') || 'https://uptimeops.com';
-  const linkUrl = `${baseUrl}/fix/${token}`;
-  const dashboardUrl = payload.dashboard_url || `${baseUrl}/customer`;
-
-  // Send email to customer
-  await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/communication-sender`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      type: 'temporary_access_granted',
-      entity_type: entityType,
-      entity_id: entityId,
-      channel: 'email',
-      customer_id: payload.customer_id,
-      metadata: {
-        link_url: linkUrl,
-        dashboard_url: dashboardUrl,
-        expires_at: expiresAt.toISOString(),
-      },
-    }),
-  });
-
-  // Audit log
-  await supabase.from('audit_logs').insert({
-    entity_type: entityType,
-    entity_id: entityId,
-    action: 'temporary_link_created',
-    performed_by_type: 'system',
-    metadata: {
-      link_id: linkRecord.id,
-      token_hash_prefix: tokenHash.substring(0, 16),
-      expires_at: expiresAt.toISOString(),
-    },
-  });
-
-  return {
-    success: true,
-    link_id: linkRecord.id,
-    token, // Only returned once — must be sent to customer immediately
-    link_url: linkUrl,
-    expires_at: expiresAt.toISOString(),
-  };
+function generateToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 64; i++) token += chars.charAt(Math.floor(Math.random() * chars.length));
+  return token;
 }
 
-async function validateToken(token: string) {
-  const tokenHash = await sha256(token);
-
-  const { data: link } = await supabase
-    .from('temporary_links')
-    .select('id, entity_type, entity_id, customer_id, expires_at, access_count, status, token_hash')
-    .eq('token_hash', tokenHash)
-    .single();
-
-  if (!link) return { success: false, error: 'Invalid token' };
-  if (link.status !== 'active') return { success: false, error: `Link is ${link.status}` };
-  if (new Date(link.expires_at) < new Date()) {
-    await supabase.from('temporary_links').update({ status: 'expired' }).eq('id', link.id);
-    return { success: false, error: 'Link has expired' };
-  }
-
-  // Increment access count
-  await supabase.from('temporary_links').update({
-    access_count: (link.access_count || 0) + 1,
-    last_accessed_at: new Date().toISOString(),
-  }).eq('id', link.id);
-
-  // Log access
-  await supabase.from('audit_logs').insert({
-    entity_type: link.entity_type,
-    entity_id: link.entity_id,
-    action: 'temporary_link_accessed',
-    performed_by_type: 'customer',
-    metadata: { link_id: link.id, access_count: (link.access_count || 0) + 1 },
-  });
-
-  return {
-    success: true,
-    link_id: link.id,
-    entity_type: link.entity_type,
-    entity_id: link.entity_id,
-    customer_id: link.customer_id,
-    expires_at: link.expires_at,
-  };
-}
-
-async function revokeToken(token: string) {
-  const tokenHash = await sha256(token);
-
-  const { data: link } = await supabase
-    .from('temporary_links')
-    .select('id, entity_type, entity_id')
-    .eq('token_hash', tokenHash)
-    .single();
-
-  if (!link) return { success: false, error: 'Token not found' };
-
-  await supabase.from('temporary_links').update({
-    status: 'revoked',
-    revoked_at: new Date().toISOString(),
-  }).eq('id', link.id);
-
-  await supabase.from('audit_logs').insert({
-    entity_type: link.entity_type,
-    entity_id: link.entity_id,
-    action: 'temporary_link_revoked',
-    performed_by_type: 'system',
-  });
-
-  return { success: true, message: 'Link revoked' };
-}
-
-async function cleanupExpired() {
-  const now = new Date().toISOString();
-
-  // Mark expired tokens
-  const { data: expired } = await supabase
-    .from('temporary_links')
-    .update({ status: 'expired' })
-    .lt('expires_at', now)
-    .eq('status', 'active')
-    .select('id');
-
-  return { success: true, expired_count: expired?.length || 0 };
-}
-
-async function archiveOld() {
-  const archiveBefore = new Date(Date.now() - ARCHIVE_AFTER_MS).toISOString();
-
-  // Move old tokens to archive table
-  const { data: old } = await supabase
-    .from('temporary_links')
-    .select('*')
-    .lt('created_at', archiveBefore)
-    .in('status', ['expired', 'revoked', 'used']);
-
-  if (old && old.length > 0) {
-    // Insert into archive
-    await supabase.from('temporary_links_archive').insert(
-      old.map(o => ({ ...o, archived_at: new Date().toISOString() }))
-    );
-
-    // Delete from main table
-    await supabase.from('temporary_links').delete().in('id', old.map(o => o.id));
-  }
-
-  return { success: true, archived_count: old?.length || 0 };
-}
-
-// SHA-256 hash helper
-async function sha256(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-export default async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS' } });
-  }
-
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  const payload: LinkPayload = await req.json();
+serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
 
   try {
-    let result: Record<string, unknown>;
+    const body = await req.json().catch(() => ({}));
+    const { action, customer_id, entity_type, entity_id, credential_id, max_uses, token_hash } = body;
+    const supabase = getSupabaseClient(req);
 
-    switch (payload.action) {
-      case 'generate':
-        result = await generateToken(payload);
-        break;
-      case 'validate':
-        if (!payload.token) return new Response(JSON.stringify({ error: 'Missing token' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-        result = await validateToken(payload.token);
-        break;
-      case 'revoke':
-        if (!payload.token) return new Response(JSON.stringify({ error: 'Missing token' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-        result = await revokeToken(payload.token);
-        break;
-      case 'cleanup_expired':
-        result = await cleanupExpired();
-        break;
-      case 'archive_old':
-        result = await archiveOld();
-        break;
-      default:
-        return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    // Generate new temporary link
+    if (action === 'generate') {
+      if (!customer_id || !entity_type || !entity_id) {
+        return new Response(JSON.stringify({ error: 'customer_id, entity_type, entity_id required' }), { status: 400, headers: corsHeaders });
+      }
+
+      const token = generateToken();
+      const hash = await hashToken(token);
+
+      const { data: link } = await supabase.from('temporary_links').insert({
+        token_hash: hash,
+        entity_type,
+        entity_id,
+        customer_id,
+        expires_at: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+        access_count: 0,
+        status: 'active',
+      }).select().single();
+
+      logInfo(FUNCTION, 'Link generated', { link_id: link?.id, entity_type, customer_id });
+
+      return new Response(JSON.stringify({
+        generated: true,
+        token, // Return once — client must store securely
+        token_hash: hash,
+        link_id: link?.id,
+        expires_at: link?.expires_at,
+        url: `/verify?token=${token}&type=${entity_type}`,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+    // Validate and consume a token
+    if (action === 'validate') {
+      if (!token_hash) return new Response(JSON.stringify({ error: 'token_hash required' }), { status: 400, headers: corsHeaders });
 
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      const { data: link } = await supabase.from('temporary_links')
+        .select('*').eq('token_hash', token_hash).eq('status', 'active').single();
+
+      if (!link) return new Response(JSON.stringify({ valid: false, reason: 'token_not_found' }), { status: 200, headers: corsHeaders });
+      if (new Date(link.expires_at) < new Date()) {
+        await supabase.from('temporary_links').update({ status: 'expired' }).eq('id', link.id);
+        return new Response(JSON.stringify({ valid: false, reason: 'expired' }), { headers: corsHeaders });
+      }
+      if (max_uses && link.access_count >= max_uses) {
+        await supabase.from('temporary_links').update({ status: 'consumed' }).eq('id', link.id);
+        return new Response(JSON.stringify({ valid: false, reason: 'max_uses_reached' }), { headers: corsHeaders });
+      }
+
+      // Update access count
+      await supabase.from('temporary_links').update({
+        access_count: link.access_count + 1,
+        last_accessed_at: new Date().toISOString(),
+      }).eq('id', link.id);
+
+      return new Response(JSON.stringify({
+        valid: true,
+        link_id: link.id,
+        entity_type: link.entity_type,
+        entity_id: link.entity_id,
+        customer_id: link.customer_id,
+        access_count: link.access_count + 1,
+      }), { headers: corsHeaders });
+    }
+
+    // Revoke a token
+    if (action === 'revoke') {
+      if (!token_hash) return new Response(JSON.stringify({ error: 'token_hash required' }), { status: 400, headers: corsHeaders });
+      await supabase.from('temporary_links').update({ status: 'revoked', revoked_at: new Date().toISOString() }).eq('token_hash', token_hash);
+      return new Response(JSON.stringify({ revoked: true }), { headers: corsHeaders });
+    }
+
+    // List active links for customer
+    if (action === 'list') {
+      if (!customer_id) return new Response(JSON.stringify({ error: 'customer_id required' }), { status: 400, headers: corsHeaders });
+      const { data: links } = await supabase.from('temporary_links')
+        .select('id, entity_type, entity_id, status, access_count, expires_at, created_at')
+        .eq('customer_id', customer_id)
+        .order('created_at', { ascending: false });
+      return new Response(JSON.stringify({ links: links || [] }), { headers: corsHeaders });
+    }
+
+    // Cleanup expired links (cron action)
+    if (action === 'cleanup_expired') {
+      const { data: expired } = await supabase.from('temporary_links')
+        .select('id').eq('status', 'active').lt('expires_at', new Date().toISOString());
+
+      let count = 0;
+      for (const link of expired || []) {
+        await supabase.from('temporary_links').update({ status: 'expired' }).eq('id', link.id);
+        count++;
+      }
+      return new Response(JSON.stringify({ cleaned: count }), { headers: corsHeaders });
+    }
+
+    return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
+  } catch (err) {
+    logError(FUNCTION, 'Request failed', err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
-};
+});

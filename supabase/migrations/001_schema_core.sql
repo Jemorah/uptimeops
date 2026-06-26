@@ -1,15 +1,20 @@
 -- ═══════════════════════════════════════════════════════════════
--- MIGRATION 001: Core Schema — Customers, Auth, Roles
+-- UPTIMEOPS MIGRATION 001: Core Schema
+-- Tables: user_roles, customers, subscriptions, one_time_fixes,
+--         credentials_vault, payment_methods
+-- Enums: 10 types
+-- Paste into Supabase SQL Editor → Click Run
 -- ═══════════════════════════════════════════════════════════════
 
--- Enable required extensions
+-- ═══════════════════════════════════════════
+-- EXTENSIONS
+-- ═══════════════════════════════════════════
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ═══════════════════════════════════════════
--- ENUMS (safe creation — re-runnable)
+-- ENUMS: Safe creation (re-runnable)
 -- ═══════════════════════════════════════════
-
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
@@ -58,9 +63,20 @@ BEGIN
 END $$;
 
 -- ═══════════════════════════════════════════
+-- HELPER FUNCTION: Auto-update updated_at
+-- ═══════════════════════════════════════════
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ═══════════════════════════════════════════
 -- TABLE: user_roles
 -- ═══════════════════════════════════════════
-CREATE TABLE user_roles (
+CREATE TABLE IF NOT EXISTS user_roles (
   id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id     uuid NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   role        user_role NOT NULL DEFAULT 'public',
@@ -68,44 +84,44 @@ CREATE TABLE user_roles (
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_user_roles_user ON user_roles(user_id);
-CREATE INDEX idx_user_roles_role ON user_roles(role);
+CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role);
 
 -- ═══════════════════════════════════════════
 -- TABLE: customers
 -- ═══════════════════════════════════════════
-CREATE TABLE customers (
-  id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id             uuid UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
-  email               text NOT NULL UNIQUE,
-  full_name           text,
-  company_name        text,
-  website             text,
-  phone               text,
-  plan                plan_tier DEFAULT 'guardian',
-  status              text DEFAULT 'active',
-  mrr                 numeric(10,2) DEFAULT 0,
-  stripe_customer_id  text UNIQUE,
-  stripe_subscription_id text,
-  subscription_status subscription_status DEFAULT 'trialing',
-  incidents_used      integer DEFAULT 0,
-  incidents_allowance integer DEFAULT 3,
-  churn_risk_score    integer,
-  churn_risk_reasons  text[],
-  created_at          timestamptz NOT NULL DEFAULT now(),
-  updated_at          timestamptz NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS customers (
+  id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id                 uuid UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
+  email                   text NOT NULL UNIQUE,
+  full_name               text,
+  company_name            text,
+  website                 text,
+  phone                   text,
+  plan                    plan_tier DEFAULT 'guardian',
+  status                  text DEFAULT 'active',
+  mrr                     numeric(10,2) DEFAULT 0,
+  stripe_customer_id      text UNIQUE,
+  stripe_subscription_id  text,
+  subscription_status     subscription_status DEFAULT 'trialing',
+  incidents_used          integer DEFAULT 0,
+  incidents_allowance     integer DEFAULT 3,
+  churn_risk_score        integer,
+  churn_risk_reasons      text[],
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  updated_at              timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_customers_user ON customers(user_id);
-CREATE INDEX idx_customers_email ON customers(email);
-CREATE INDEX idx_customers_plan ON customers(plan);
-CREATE INDEX idx_customers_status ON customers(status);
-CREATE INDEX idx_customers_stripe ON customers(stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_customers_user ON customers(user_id);
+CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+CREATE INDEX IF NOT EXISTS idx_customers_plan ON customers(plan);
+CREATE INDEX IF NOT EXISTS idx_customers_status ON customers(status);
+CREATE INDEX IF NOT EXISTS idx_customers_stripe ON customers(stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;
 
 -- ═══════════════════════════════════════════
 -- TABLE: subscriptions
 -- ═══════════════════════════════════════════
-CREATE TABLE subscriptions (
+CREATE TABLE IF NOT EXISTS subscriptions (
   id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id             uuid NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   stripe_subscription_id  text UNIQUE,
@@ -123,15 +139,15 @@ CREATE TABLE subscriptions (
   updated_at              timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_subscriptions_customer ON subscriptions(customer_id);
-CREATE INDEX idx_subscriptions_stripe ON subscriptions(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
-CREATE INDEX idx_subscriptions_status ON subscriptions(status);
-CREATE INDEX idx_subscriptions_period ON subscriptions(current_period_end) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_subscriptions_customer ON subscriptions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe ON subscriptions(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_period ON subscriptions(current_period_end) WHERE status = 'active';
 
 -- ═══════════════════════════════════════════
 -- TABLE: one_time_fixes
 -- ═══════════════════════════════════════════
-CREATE TABLE one_time_fixes (
+CREATE TABLE IF NOT EXISTS one_time_fixes (
   id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id         uuid NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   payment_intent_id   text UNIQUE,
@@ -146,21 +162,21 @@ CREATE TABLE one_time_fixes (
   updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_onetime_customer ON one_time_fixes(customer_id);
-CREATE INDEX idx_onetime_payment ON one_time_fixes(payment_intent_id) WHERE payment_intent_id IS NOT NULL;
-CREATE INDEX idx_onetime_status ON one_time_fixes(status);
+CREATE INDEX IF NOT EXISTS idx_onetime_customer ON one_time_fixes(customer_id);
+CREATE INDEX IF NOT EXISTS idx_onetime_payment ON one_time_fixes(payment_intent_id) WHERE payment_intent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_onetime_status ON one_time_fixes(status);
 
 -- ═══════════════════════════════════════════
 -- TABLE: credentials_vault
 -- Zero-knowledge: server only stores encrypted payload
 -- ═══════════════════════════════════════════
-CREATE TABLE credentials_vault (
+CREATE TABLE IF NOT EXISTS credentials_vault (
   id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id             uuid NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  encrypted_payload       text NOT NULL,  -- AES-256-GCM ciphertext only
-  public_key_fingerprint  text NOT NULL,  -- SHA-256 of public key for lookup
-  iv                      text NOT NULL,  -- Initialization vector (safe to store)
-  salt                    text NOT NULL,  -- Key derivation salt
+  encrypted_payload       text NOT NULL,
+  public_key_fingerprint  text NOT NULL,
+  iv                      text NOT NULL,
+  salt                    text NOT NULL,
   expires_at              timestamptz NOT NULL,
   revoked_at              timestamptz,
   access_count            integer DEFAULT 0,
@@ -168,100 +184,169 @@ CREATE TABLE credentials_vault (
   created_at              timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_credentials_customer ON credentials_vault(customer_id);
-CREATE INDEX idx_credentials_fingerprint ON credentials_vault(public_key_fingerprint);
-CREATE INDEX idx_credentials_expires ON credentials_vault(expires_at) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_credentials_customer ON credentials_vault(customer_id);
+CREATE INDEX IF NOT EXISTS idx_credentials_fingerprint ON credentials_vault(public_key_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_credentials_expires ON credentials_vault(expires_at) WHERE revoked_at IS NULL;
+
+-- ═══════════════════════════════════════════
+-- TABLE: payment_methods
+-- ═══════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS payment_methods (
+  id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  customer_id         uuid NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  stripe_payment_method_id  text UNIQUE NOT NULL,
+  card_brand          text,
+  card_last4          text,
+  card_exp_month      integer,
+  card_exp_year       integer,
+  is_default          boolean DEFAULT false,
+  billing_email       text,
+  created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_methods_customer ON payment_methods(customer_id);
 
 -- ═══════════════════════════════════════════
 -- TRIGGERS: Auto-update updated_at
 -- ═══════════════════════════════════════════
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+DO $$
 BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_customers_updated
-  BEFORE UPDATE ON customers
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trg_subscriptions_updated
-  BEFORE UPDATE ON subscriptions
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trg_user_roles_updated
-  BEFORE UPDATE ON user_roles
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trg_onetime_fixes_updated
-  BEFORE UPDATE ON one_time_fixes
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_customers_updated') THEN
+    CREATE TRIGGER trg_customers_updated
+      BEFORE UPDATE ON customers
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_subscriptions_updated') THEN
+    CREATE TRIGGER trg_subscriptions_updated
+      BEFORE UPDATE ON subscriptions
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_user_roles_updated') THEN
+    CREATE TRIGGER trg_user_roles_updated
+      BEFORE UPDATE ON user_roles
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_onetime_fixes_updated') THEN
+    CREATE TRIGGER trg_onetime_fixes_updated
+      BEFORE UPDATE ON one_time_fixes
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+END $$;
 
 -- ═══════════════════════════════════════════
--- RLS POLICIES: Core tables
+-- RLS: Enable and create policies
 -- ═══════════════════════════════════════════
 
--- Enable RLS
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE one_time_fixes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credentials_vault ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
 
--- user_roles: users can read their own role, admins can manage all
-CREATE POLICY user_roles_own ON user_roles
-  FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY user_roles_admin ON user_roles
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
-  );
+-- user_roles
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'user_roles_own' AND tablename = 'user_roles') THEN
+    CREATE POLICY user_roles_own ON user_roles FOR SELECT USING (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'user_roles_admin' AND tablename = 'user_roles') THEN
+    CREATE POLICY user_roles_admin ON user_roles FOR ALL USING (
+      EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'service_user_roles' AND tablename = 'user_roles') THEN
+    CREATE POLICY service_user_roles ON user_roles FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
--- customers: own record + coordinator/admin can manage
-CREATE POLICY customers_own ON customers
-  FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY customers_admin ON customers
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
-  );
+-- customers
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'customers_own' AND tablename = 'customers') THEN
+    CREATE POLICY customers_own ON customers FOR SELECT USING (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'customers_admin' AND tablename = 'customers') THEN
+    CREATE POLICY customers_admin ON customers FOR ALL USING (
+      EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'service_customers' AND tablename = 'customers') THEN
+    CREATE POLICY service_customers ON customers FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
--- subscriptions: own + coordinator/admin
-CREATE POLICY subscriptions_own ON subscriptions
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM customers WHERE id = subscriptions.customer_id AND user_id = auth.uid())
-  );
-CREATE POLICY subscriptions_admin ON subscriptions
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
-  );
+-- subscriptions
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'subscriptions_own' AND tablename = 'subscriptions') THEN
+    CREATE POLICY subscriptions_own ON subscriptions FOR SELECT USING (
+      EXISTS (SELECT 1 FROM customers WHERE id = subscriptions.customer_id AND user_id = auth.uid())
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'subscriptions_admin' AND tablename = 'subscriptions') THEN
+    CREATE POLICY subscriptions_admin ON subscriptions FOR ALL USING (
+      EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'service_subscriptions' AND tablename = 'subscriptions') THEN
+    CREATE POLICY service_subscriptions ON subscriptions FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
--- one_time_fixes: own + coordinator/admin
-CREATE POLICY onetime_own ON one_time_fixes
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM customers WHERE id = one_time_fixes.customer_id AND user_id = auth.uid())
-  );
-CREATE POLICY onetime_admin ON one_time_fixes
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
-  );
+-- one_time_fixes
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'onetime_own' AND tablename = 'one_time_fixes') THEN
+    CREATE POLICY onetime_own ON one_time_fixes FOR SELECT USING (
+      EXISTS (SELECT 1 FROM customers WHERE id = one_time_fixes.customer_id AND user_id = auth.uid())
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'onetime_admin' AND tablename = 'one_time_fixes') THEN
+    CREATE POLICY onetime_admin ON one_time_fixes FOR ALL USING (
+      EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'service_onetime' AND tablename = 'one_time_fixes') THEN
+    CREATE POLICY service_onetime ON one_time_fixes FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
--- credentials_vault: customer can read own, engineer needs approval flow, coordinator can audit
-CREATE POLICY creds_own ON credentials_vault
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM customers WHERE id = credentials_vault.customer_id AND user_id = auth.uid())
-  );
-CREATE POLICY creds_admin ON credentials_vault
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
-  );
+-- credentials_vault
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'creds_own' AND tablename = 'credentials_vault') THEN
+    CREATE POLICY creds_own ON credentials_vault FOR SELECT USING (
+      EXISTS (SELECT 1 FROM customers WHERE id = credentials_vault.customer_id AND user_id = auth.uid())
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'creds_admin' AND tablename = 'credentials_vault') THEN
+    CREATE POLICY creds_admin ON credentials_vault FOR ALL USING (
+      EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'service_creds' AND tablename = 'credentials_vault') THEN
+    CREATE POLICY service_creds ON credentials_vault FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
--- Allow service role (edge functions) full access
-CREATE POLICY service_user_roles ON user_roles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY service_customers ON customers FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY service_subscriptions ON subscriptions FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY service_onetime ON one_time_fixes FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY service_creds ON credentials_vault FOR ALL USING (true) WITH CHECK (true);
+-- payment_methods
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'payment_methods_own' AND tablename = 'payment_methods') THEN
+    CREATE POLICY payment_methods_own ON payment_methods FOR ALL USING (
+      EXISTS (SELECT 1 FROM customers WHERE id = payment_methods.customer_id AND user_id = auth.uid())
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'payment_methods_admin' AND tablename = 'payment_methods') THEN
+    CREATE POLICY payment_methods_admin ON payment_methods FOR ALL USING (
+      EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'service_payment_methods' AND tablename = 'payment_methods') THEN
+    CREATE POLICY service_payment_methods ON payment_methods FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
 -- ═══════════════════════════════════════════
 -- HELPER FUNCTIONS
@@ -278,16 +363,16 @@ CREATE OR REPLACE FUNCTION update_customer_mrr(p_customer_id uuid)
 RETURNS void AS $$
 BEGIN
   UPDATE customers
-  SET mrr = (
-    SELECT COALESCE(SUM(price_cents), 0) / 100.0
+  SET mrr = COALESCE((
+    SELECT SUM(price_cents) / 100.0
     FROM subscriptions
     WHERE customer_id = p_customer_id AND status IN ('active', 'trialing')
-  )
+  ), 0)
   WHERE id = p_customer_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Calculate all MRR (for HQ dashboard)
+-- Calculate all MRR (HQ dashboard)
 CREATE OR REPLACE FUNCTION calculate_all_mrr()
 RETURNS numeric AS $$
   SELECT COALESCE(SUM(price_cents), 0) / 100.0
@@ -298,17 +383,19 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 -- ═══════════════════════════════════════════
 -- SEED DATA
 -- ═══════════════════════════════════════════
-
 INSERT INTO user_roles (user_id, role) VALUES
   ('00000000-0000-0000-0000-000000000001', 'admin'),
   ('00000000-0000-0000-0000-000000000002', 'coordinator'),
   ('00000000-0000-0000-0000-000000000003', 'engineer'),
-  ('00000000-0000-0000-0000-000000000004', 'customer');
+  ('00000000-0000-0000-0000-000000000004', 'customer')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO customers (id, user_id, email, full_name, company_name, website, plan, status, mrr) VALUES
   ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000004', 'demo@acme-corp.com', 'Demo Customer', 'Acme Corp', 'acme-corp.com', 'sentinel', 'active', 249.00),
   ('11111111-1111-1111-1111-111111111112', NULL, 'lead1@techflow.io', NULL, 'TechFlow', 'techflow.io', 'guardian', 'lead', 0),
-  ('11111111-1111-1111-1111-111111111113', NULL, 'lead2@datavault.net', NULL, 'DataVault', 'datavault.net', 'fortress', 'lead', 0);
+  ('11111111-1111-1111-1111-111111111113', NULL, 'lead2@datavault.net', NULL, 'DataVault', 'datavault.net', 'fortress', 'lead', 0)
+ON CONFLICT DO NOTHING;
 
 INSERT INTO subscriptions (customer_id, plan, price_cents, incidents_allowance, current_period_start, current_period_end) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'sentinel', 24900, 10, now(), now() + interval '30 days');
+  ('11111111-1111-1111-1111-111111111111', 'sentinel', 24900, 10, now(), now() + interval '30 days')
+ON CONFLICT DO NOTHING;

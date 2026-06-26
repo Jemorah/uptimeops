@@ -1,192 +1,103 @@
-// ═══════════════════════════════════════════════════════════════
-// AI AGENT 3: REPAIR
-// Executes fix on isolated VM
-// Runs on: After ISOLATE completes (site cloned)
-// Output: Fix applied, VM session status = repairing/testing
-// ═══════════════════════════════════════════════════════════════
+// UptimeOps — AI Repair Agent
+// Diagnoses root cause and generates fix commands
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
+import { getSupabaseClient } from '../_shared/supabase.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const FUNCTION = 'ai-repair';
 
-interface RepairPayload {
-  vm_session_id: string;
-  incident_id?: string;
-  fix_id?: string;
+interface RepairCommand {
+  command: string;
+  description: string;
+  expected_output: string;
+  rollback_command: string;
+  risk_level: 'low' | 'medium' | 'high';
 }
 
-// Simulated repair strategies based on issue category
-const repairStrategies: Record<string, string[]> = {
-  plugin_conflict: [
-    'Scanning wp-content/plugins for recently modified files',
-    'Detected WooCommerce 8.2 incompatibility with custom-gateway v1.4',
-    'Isolating conflicting plugin: custom-payment-gateway',
-    'Applying compatibility patch: updating gateway API calls',
-    'Verifying checkout flow with patched plugin',
-  ],
-  malware: [
-    'Running signature-based malware scan on all files',
-    'Detected suspicious base64 encoded payload in header.php',
-    'Quarantining infected files to /var/quarantine/',
-    'Restoring clean versions from git repository',
-    'Applying security hardening rules to wp-config.php',
-  ],
-  broken_code: [
-    'Analyzing PHP error logs for stack traces',
-    'Identifying syntax error in functions.php line 142',
-    'Parsing AST to understand code context',
-    'Generating fix: correcting function signature mismatch',
-    'Running PHP lint to verify fix validity',
-  ],
-  performance: [
-    'Profiling database query execution times',
-    'Identifying N+1 query pattern in product listing',
-    'Applying query optimization: adding composite index',
-    'Enabling object caching via Redis',
-    'Verifying TTFB improvement (< 200ms target)',
-  ],
-  firewall: [
-    'Analyzing WAF rule triggers for false positives',
-    'Detected rate limit blocking legitimate payment webhooks',
-    'Whitelisting Stripe IP ranges in firewall config',
-    'Adjusting rate limit thresholds: 100 req/min for /webhook/*',
-    'Testing webhook delivery with adjusted rules',
-  ],
-  ddos: [
-    'Analyzing traffic patterns for attack signature',
-    'Activating rate limiting: 10 req/sec per IP',
-    'Enabling Cloudflare Under Attack mode',
-    'Blocking identified botnet IP ranges',
-    'Verifying legitimate traffic flow restoration',
-  ],
-  other: [
-    'Running comprehensive site health diagnostics',
-    'Checking file permissions and ownership',
-    'Verifying database connectivity and charset',
-    'Reviewing recent changes in version control',
-    'Applying general stability fixes',
-  ],
-};
+function generateRepairPlan(title: string, description: string): { commands: RepairCommand[]; confidence: number; summary: string } {
+  const text = (title + ' ' + description).toLowerCase();
+  const commands: RepairCommand[] = [];
+  let confidence = 70;
 
-export default async (req: Request) => {
-  const payload: RepairPayload = await req.json();
-  const startTime = Date.now();
+  if (/database|postgres|mysql|connection|pool/.test(text)) {
+    commands.push(
+      { command: 'psql -c "SELECT count(*) FROM pg_stat_activity;"', description: 'Check active connections', expected_output: 'count < max_connections', rollback_command: '', risk_level: 'low' },
+      { command: 'psql -c "SHOW max_connections;"', description: 'Check max connections limit', expected_output: 'max_connections value', rollback_command: '', risk_level: 'low' },
+      { command: 'psql -c "SELECT * FROM pg_stat_activity WHERE state = \'idle\' AND now() - query_start > interval \'10 min\';"', description: 'Find idle connections', expected_output: 'List of idle connections', rollback_command: '', risk_level: 'low' },
+      { command: 'psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = \'idle\' AND now() - query_start > interval \'10 min\';"', description: 'Terminate idle connections', expected_output: ' backends terminated', rollback_command: 'Restart PostgreSQL to restore original state', risk_level: 'medium' },
+    );
+    confidence = 85;
+  } else if (/nginx|502|503|upstream/.test(text)) {
+    commands.push(
+      { command: 'nginx -t', description: 'Test nginx configuration', expected_output: 'syntax is ok', rollback_command: 'cp /etc/nginx/nginx.conf.bak /etc/nginx/nginx.conf && nginx -s reload', risk_level: 'low' },
+      { command: 'cat /var/log/nginx/error.log | tail -20', description: 'Check nginx errors', expected_output: 'Error details', rollback_command: '', risk_level: 'low' },
+      { command: 'systemctl restart nginx', description: 'Restart nginx', expected_output: 'nginx restarted', rollback_command: 'systemctl stop nginx', risk_level: 'medium' },
+    );
+    confidence = 88;
+  } else if (/ssl|certificate|expired/.test(text)) {
+    commands.push(
+      { command: 'openssl x509 -in /etc/ssl/cert.pem -noout -dates', description: 'Check cert expiry', expected_output: 'notAfter date', rollback_command: '', risk_level: 'low' },
+      { command: 'certbot renew --dry-run', description: 'Test cert renewal', expected_output: 'success', rollback_command: '', risk_level: 'low' },
+      { command: 'certbot renew && systemctl reload nginx', description: 'Renew certificate', expected_output: 'Congratulations', rollback_command: 'Restore from /etc/letsencrypt/backup', risk_level: 'medium' },
+    );
+    confidence = 92;
+  } else if (/redis|memory|cache/.test(text)) {
+    commands.push(
+      { command: 'redis-cli INFO memory', description: 'Check Redis memory', expected_output: 'used_memory_human', rollback_command: '', risk_level: 'low' },
+      { command: 'redis-cli --eval evict_old_keys.lua', description: 'Evict old cache keys', expected_output: 'Keys evicted', rollback_command: '', risk_level: 'medium' },
+    );
+    confidence = 80;
+  } else {
+    commands.push(
+      { command: 'uptime && free -h && df -h', description: 'System health check', expected_output: 'System stats', rollback_command: '', risk_level: 'low' },
+      { command: 'docker ps --format "table {{.Names}}\t{{.Status}}"', description: 'Check container status', expected_output: 'Container list', rollback_command: '', risk_level: 'low' },
+    );
+    confidence = 65;
+  }
+
+  return { commands, confidence, summary: `Generated ${commands.length} repair commands for ${text.slice(0, 50)}...` };
+}
+
+serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
 
   try {
-    // Get VM session
-    const { data: vmSession } = await supabase
-      .from('vm_sessions')
-      .select('*')
-      .eq('id', payload.vm_session_id)
-      .single();
+    const { incident_id, vm_session_id } = await req.json();
+    if (!incident_id) return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
 
-    if (!vmSession) throw new Error('VM session not found');
+    const supabase = getSupabaseClient(req);
+    const { data: incident } = await supabase.from('incidents').select('title, description').eq('id', incident_id).single();
+    if (!incident) return new Response(JSON.stringify({ error: 'Incident not found' }), { status: 404, headers: corsHeaders });
 
-    // Get source entity for issue category
-    let category = 'other';
-    if (vmSession.incident_id) {
-      const { data: incident } = await supabase.from('incidents').select('description').eq('id', vmSession.incident_id).single();
-      if (incident) {
-        const desc = incident.description.toLowerCase();
-        if (desc.includes('plugin')) category = 'plugin_conflict';
-        else if (desc.includes('malware') || desc.includes('hack')) category = 'malware';
-        else if (desc.includes('error') || desc.includes('fatal')) category = 'broken_code';
-        else if (desc.includes('slow') || desc.includes('performance')) category = 'performance';
-        else if (desc.includes('firewall') || desc.includes('block')) category = 'firewall';
-        else if (desc.includes('ddos') || desc.includes('attack')) category = 'ddos';
+    const plan = generateRepairPlan(incident.title || '', incident.description || '');
+
+    // Queue commands in VM
+    if (vm_session_id) {
+      for (const cmd of plan.commands) {
+        await supabase.from('vm_commands').insert({
+          vm_session_id,
+          command: cmd.command,
+          status: 'queued',
+        });
       }
-    } else if (vmSession.one_time_fix_id) {
-      const { data: fix } = await supabase.from('one_time_fixes').select('issue_category').eq('id', vmSession.one_time_fix_id).single();
-      if (fix?.issue_category) category = fix.issue_category;
     }
 
-    const steps = repairStrategies[category] || repairStrategies.other;
+    // Update pipeline
+    await supabase.from('pipeline_states').update({
+      current_step: 'validate',
+      confidence: plan.confidence,
+    }).eq('incident_id', incident_id);
 
-    // Execute repair steps with simulated timing
-    const repairLogs = [];
-    for (const step of steps) {
-      await new Promise(r => setTimeout(r, 200 + Math.random() * 400));
-      repairLogs.push({
-        step: step,
-        timestamp: new Date().toISOString(),
-        success: true,
-      });
-    }
+    await supabase.from('incidents').update({ status: 'validate', ai_confidence: plan.confidence }).eq('id', incident_id);
 
-    // Calculate confidence based on complexity
-    const complexityFactor = steps.length * 10;
-    const randomFactor = Math.random() * 20 - 10;
-    const confidence = Math.min(98, Math.max(60, 85 + randomFactor - complexityFactor * 0.1));
+    logInfo(FUNCTION, 'Repair plan generated', { incident_id, commands: plan.commands.length, confidence: plan.confidence });
 
-    // Update VM session
-    await supabase.from('vm_sessions').update({
-      session_status: 'testing',
-      ai_agent_logs: [...(vmSession.ai_agent_logs || []), ...repairLogs],
-      confidence_score: confidence,
-    }).eq('id', payload.vm_session_id);
-
-    // Update parent entity
-    if (vmSession.incident_id) {
-      await supabase.from('incidents').update({
-        status: 'ai_repairing',
-        ai_confidence_score: confidence,
-        updated_at: new Date().toISOString(),
-      }).eq('id', vmSession.incident_id);
-    }
-    if (vmSession.one_time_fix_id) {
-      await supabase.from('one_time_fixes').update({
-        status: 'repairing',
-        ai_confidence_score: confidence,
-        updated_at: new Date().toISOString(),
-      }).eq('id', vmSession.one_time_fix_id);
-    }
-
-    // Audit log
-    await supabase.from('audit_logs').insert({
-      entity_type: 'vm_session',
-      entity_id: payload.vm_session_id,
-      action: 'repair_complete',
-      performed_by_type: 'ai_agent',
-      metadata: {
-        category,
-        steps_completed: steps.length,
-        confidence_score: confidence,
-        repair_duration_ms: Date.now() - startTime,
-      },
-    });
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        agent: 'REPAIR',
-        duration_ms: Date.now() - startTime,
-        result: {
-          category,
-          steps_completed: steps.length,
-          confidence: Math.round(confidence * 10) / 10,
-          requires_approval: confidence < 90,
-        },
-      }),
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-    await supabase.from('audit_logs').insert({
-      entity_type: 'vm_session',
-      entity_id: payload.vm_session_id,
-      action: 'repair_failed',
-      performed_by_type: 'system',
-      metadata: { error: errorMessage },
-    });
-
-    return new Response(
-      JSON.stringify({ success: false, agent: 'REPAIR', error: errorMessage }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify(plan), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  } catch (err) {
+    logError(FUNCTION, 'Repair failed', err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
-};
+});
