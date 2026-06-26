@@ -155,26 +155,13 @@ ON CONFLICT (id) DO NOTHING;
 -- ═══════════════════════════════════════════
 -- REALTIME CONFIGURATION
 -- ═══════════════════════════════════════════
-
--- Enable realtime for key tables
-DO $$
-DECLARE
-  tbl text;
-  tables text[] := ARRAY[
-    'incidents', 'pipeline_states', 'human_escalations',
-    'vm_sessions', 'audit_logs', 'communications_log', 'notifications'
-  ];
-BEGIN
-  FOREACH tbl IN ARRAY tables
-  LOOP
-    BEGIN
-      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', tbl);
-    EXCEPTION WHEN OTHERS THEN
-      -- Table may already be in publication, ignore
-      NULL;
-    END;
-  END LOOP;
-END $$;
+-- NOTE: Do NOT use ALTER PUBLICATION here — it calls realtime.topic_add()
+-- which doesn't exist on all Supabase versions.
+--
+-- INSTEAD: Enable realtime via Supabase Dashboard:
+--   Dashboard → Database → Replication → toggle ON for each table:
+--   incidents, pipeline_states, human_escalations, vm_sessions,
+--   audit_logs, communications_log, notifications
 
 -- ═══════════════════════════════════════════
 -- SUPABASE VAULT SECRET TEMPLATE

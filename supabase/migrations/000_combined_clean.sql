@@ -604,24 +604,23 @@ INSERT INTO audit_logs (table_name, entity_type, entity_id, action, performed_by
   ('system', 'platform', 'uptimeops', 'schema_initialized', 'system', '{"version": "1.0.0", "tables": 18}'::jsonb);
 
 -- ═══════════════════════════════════════════
--- REALTIME: Enable for live updates
--- Wrap in safe block — some Supabase instances don't have topic_add()
+-- REALTIME: Enable via Supabase Dashboard UI
 -- ═══════════════════════════════════════════
-DO $$
-DECLARE
-  tbl text;
-  tables text[] := ARRAY['incidents', 'human_escalations', 'pipeline_states', 'notifications', 'engineer_profiles'];
-BEGIN
-  FOREACH tbl IN ARRAY tables
-  LOOP
-    BEGIN
-      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', tbl);
-    EXCEPTION WHEN OTHERS THEN
-      -- Table may already be in publication, or topic_add unavailable
-      NULL;
-    END;
-  END LOOP;
-END $$;
+-- NOTE: Do NOT use ALTER PUBLICATION here — it calls realtime.topic_add()
+-- which doesn't exist on all Supabase versions.
+--
+-- INSTEAD: Enable realtime for each table via the Dashboard:
+--   1. Supabase Dashboard → Database → Replication
+--   2. Find each table below and toggle ON:
+--      - incidents
+--      - human_escalations
+--      - pipeline_states
+--      - notifications
+--      - engineer_profiles
+--
+-- Or run this separate SQL after migration (if your instance supports it):
+--   SELECT realtime.add_topic('supabase_realtime', 'incidents');
+--   (check available functions first)
 
 -- ═══════════════════════════════════════════
 -- DONE
