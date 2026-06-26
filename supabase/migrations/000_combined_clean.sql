@@ -605,12 +605,23 @@ INSERT INTO audit_logs (table_name, entity_type, entity_id, action, performed_by
 
 -- ═══════════════════════════════════════════
 -- REALTIME: Enable for live updates
+-- Wrap in safe block — some Supabase instances don't have topic_add()
 -- ═══════════════════════════════════════════
-ALTER PUBLICATION supabase_realtime ADD TABLE incidents;
-ALTER PUBLICATION supabase_realtime ADD TABLE human_escalations;
-ALTER PUBLICATION supabase_realtime ADD TABLE pipeline_states;
-ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE engineer_profiles;
+DO $$
+DECLARE
+  tbl text;
+  tables text[] := ARRAY['incidents', 'human_escalations', 'pipeline_states', 'notifications', 'engineer_profiles'];
+BEGIN
+  FOREACH tbl IN ARRAY tables
+  LOOP
+    BEGIN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', tbl);
+    EXCEPTION WHEN OTHERS THEN
+      -- Table may already be in publication, or topic_add unavailable
+      NULL;
+    END;
+  END LOOP;
+END $$;
 
 -- ═══════════════════════════════════════════
 -- DONE
