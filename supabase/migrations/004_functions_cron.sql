@@ -115,72 +115,40 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
 
 -- Schedule jobs only if cron schema exists
-DO $$
+DO $DO$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'cron') THEN
-    -- 1. Auto-cleanup expired VM sessions every hour
-    PERFORM cron.schedule('cleanup-vms', '0 * * * *', $$
-      UPDATE vm_sessions
-      SET status = 'timeout',
-          destroyed_at = now(),
-          destroy_reason = 'auto_timeout_4h'
-      WHERE status = 'running'
-        AND created_at < now() - interval '4 hours';
-    $$);
+    PERFORM cron.schedule('cleanup-vms', '0 * * * *',
+      'UPDATE vm_sessions SET status = ''timeout'', destroyed_at = now(), destroy_reason = ''auto_timeout_4h'' WHERE status = ''running'' AND created_at < now() - interval ''4 hours'';'
+    );
 
-    -- 2. Auto-cleanup expired credential vault entries daily
-    PERFORM cron.schedule('cleanup-credentials', '0 4 * * *', $$
-      UPDATE credentials_vault
-      SET revoked_at = now()
-      WHERE revoked_at IS NULL
-        AND expires_at < now();
-    $$);
+    PERFORM cron.schedule('cleanup-credentials', '0 4 * * *',
+      'UPDATE credentials_vault SET revoked_at = now() WHERE revoked_at IS NULL AND expires_at < now();'
+    );
 
-    -- 3. Archive old temporary links daily at 3 AM
-    PERFORM cron.schedule('archive-links', '0 3 * * *', $$
-      SELECT archive_expired_links();
-    $$);
+    PERFORM cron.schedule('archive-links', '0 3 * * *',
+      'SELECT archive_expired_links();'
+    );
 
-    -- 4. Reset monthly incident allowances (1st of month at midnight)
-    PERFORM cron.schedule('reset-allowances', '0 0 1 * *', $$
-      UPDATE subscriptions
-      SET incidents_used_this_period = 0
-      WHERE status IN ('active', 'trialing');
-    $$);
+    PERFORM cron.schedule('reset-allowances', '0 0 1 * *',
+      'UPDATE subscriptions SET incidents_used_this_period = 0 WHERE status IN (''active'', ''trialing'');'
+    );
 
-    -- 5. Engineer heartbeat timeout (mark offline if no heartbeat for 5 min)
-    PERFORM cron.schedule('engineer-heartbeat', '*/5 * * * *', $$
-      UPDATE engineer_profiles
-      SET is_on_call = false
-      WHERE is_on_call = true
-        AND last_heartbeat_at < now() - interval '5 minutes';
-    $$);
+    PERFORM cron.schedule('engineer-heartbeat', '*/5 * * * *',
+      'UPDATE engineer_profiles SET is_on_call = false WHERE is_on_call = true AND last_heartbeat_at < now() - interval ''5 minutes'';'
+    );
 
-    -- 6. Auto-close resolved incidents after 24 hours
-    PERFORM cron.schedule('auto-close', '0 */6 * * *', $$
-      UPDATE incidents
-      SET status = 'closed',
-          closed_at = now()
-      WHERE status = 'resolved'
-        AND resolved_at < now() - interval '24 hours';
-    $$);
+    PERFORM cron.schedule('auto-close', '0 */6 * * *',
+      'UPDATE incidents SET status = ''closed'', closed_at = now() WHERE status = ''resolved'' AND resolved_at < now() - interval ''24 hours'';'
+    );
 
-    -- 7. Subscription expiry reminders (daily at 9 AM)
-    PERFORM cron.schedule('subscription-reminders', '0 9 * * *', $$
-      INSERT INTO notifications (customer_id, type, message)
-      SELECT customer_id, 'renewal_reminder',
-        'Your subscription expires in ' ||
-        EXTRACT(DAY FROM current_period_end - now())::text ||
-        ' days. Renew to avoid service interruption.'
-      FROM subscriptions
-      WHERE status = 'active'
-        AND current_period_end BETWEEN now() AND now() + interval '7 days';
-    $$);
+    PERFORM cron.schedule('subscription-reminders', '0 9 * * *',
+      'INSERT INTO notifications (customer_id, type, message) SELECT customer_id, ''renewal_reminder'', ''Your subscription expires in '' || EXTRACT(DAY FROM current_period_end - now())::text || '' days.'' FROM subscriptions WHERE status = ''active'' AND current_period_end BETWEEN now() AND now() + interval ''7 days'';'
+    );
   ELSE
-    RAISE NOTICE 'pg_cron extension not available. Skipping cron job setup.';
-    RAISE NOTICE 'Enable it via: Supabase Dashboard → Database → Extensions → pg_cron';
+    RAISE NOTICE 'pg_cron not available. Enable via Dashboard → Database → Extensions → pg_cron';
   END IF;
-END $$;
+END $DO$;
 
 -- ═══════════════════════════════════════════
 -- STORAGE BUCKETS
