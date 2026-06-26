@@ -159,4 +159,8 @@ SELECT
   (SELECT count(*) FROM pg_policies WHERE schemaname = 'public') as policy_count,
   (SELECT count(*) FROM information_schema.triggers WHERE trigger_schema = 'public') as trigger_count,
   (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public') as index_count,
-  (SELECT count(*) FROM cron.job) as cron_job_count;
+  CASE
+    WHEN EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'cron')
+    THEN (SELECT count(*) FROM cron.job)
+    ELSE 0
+  END as cron_job_count;
