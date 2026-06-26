@@ -75,7 +75,7 @@ INSERT INTO incidents (id, customer_id, source_type, title, description, website
   ('22222222-2222-2222-2222-222222222228', '11111111-1111-1111-1111-111111111115', 'subscription',
    'Load balancer misrouting traffic',
    'AWS ALB routing to unhealthy targets. 40% of requests failing.',
-   'datavault.net', 'pending_assignment', 'P1_CRITICAL', NULL, NULL)
+   'datavault.net', 'triage', 'P1_CRITICAL', NULL, NULL)
 ON CONFLICT DO NOTHING;
 
 -- One-time fixes
