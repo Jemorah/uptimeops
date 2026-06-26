@@ -94,13 +94,13 @@
 
   "redirects": [
     {
-      "source": "/www.uptimeops.com/:path*",
-      "destination": "https://uptimeops.com/:path*",
+      "source": "/www.uptimeops.org/:path*",
+      "destination": "https://uptimeops.org/:path*",
       "permanent": true
     },
     {
       "source": "/http/:path*",
-      "destination": "https://uptimeops.com/:path*",
+      "destination": "https://uptimeops.org/:path*",
       "permanent": true
     }
   ]
