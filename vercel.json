@@ -6,7 +6,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install --legacy-peer-deps",
-  "regions": ["iad1", "sfo1", "fra1"],
+  "regions": ["iad1"],
   
   "headers": [
     {
