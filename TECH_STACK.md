@@ -12,7 +12,7 @@ Complete technical specification for the UptimeOps platform.
 | Backend | Supabase | PostgreSQL 16, Deno 2 |
 | AI | ANTIGRAVITY SDK + Claude 3.5 Sonnet | Multi-agent |
 | Payments | Stripe | PaymentIntent + Subscription |
-| Comms | Resend (email) + Twilio (SMS) | Transactional |
+| Comms | Resend (email) | Transactional |
 | Deploy | Vercel (FE) + Supabase (BE) | Global CDN, Edge Functions |
 
 ---
@@ -146,7 +146,6 @@ TRIAGE → ISOLATE → REPAIR → VALIDATE → DEPLOY → AUDIT
 |---------|----------|----------|
 | Email (transactional) | Resend | Status updates, invoices, approvals |
 | Email (marketing) | Mailchimp | Nurture sequences, newsletters |
-| SMS | Twilio | Emergency alerts, P1 notifications |
 | Push | Web Push API | Real-time dashboard notifications |
 | Dashboard | Supabase Realtime | In-app notifications |
 
@@ -216,9 +215,6 @@ Git Push
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions | Supabase Dashboard |
 | `STRIPE_SECRET_KEY` | Edge Functions | Stripe Dashboard |
 | `STRIPE_WEBHOOK_SECRET` | stripe-webhook | Stripe Dashboard |
-| `TWILIO_SID` | communication-sender | Twilio Console |
-| `TWILIO_TOKEN` | communication-sender | Twilio Console |
-| `TWILIO_FROM` | communication-sender | Twilio Console |
 | `RESEND_API_KEY` | communication-sender | Resend Dashboard |
 | `DIGITALOCEAN_TOKEN` | vm-manager | DO Control Panel |
 | `DIGITALOCEAN_SSH_KEY_ID` | vm-manager | DO Control Panel |

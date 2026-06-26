@@ -1,9 +1,10 @@
 // UptimeOps — Communication Sender
-// Sends email (Resend), SMS (Twilio), push notifications, and in-app dashboard messages
+// Sends email (Resend), push notifications, and in-app dashboard messages
+// Email-only: no SMS provider
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { logInfo, logError } from '../_shared/logger.ts';
+import { logInfo, logWarn, logError } from '../_shared/logger.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
 
 const FUNCTION = 'communication-sender';
@@ -13,7 +14,7 @@ interface CommPayload {
   customer_id?: string;
   entity_type?: string;
   entity_id?: string;
-  channel: 'email' | 'sms' | 'push' | 'dashboard' | 'all';
+  channel: 'email' | 'push' | 'dashboard' | 'all';
   subject?: string;
   body?: string;
   to?: string;
@@ -34,22 +35,6 @@ async function sendEmail(to: string, subject: string, body: string): Promise<boo
   } catch (e) { logError(FUNCTION, 'Email send failed', e); return false; }
 }
 
-async function sendSMS(to: string, body: string): Promise<boolean> {
-  const twilioSid = Deno.env.get('TWILIO_SID');
-  const twilioToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-  const twilioFrom = Deno.env.get('TWILIO_PHONE');
-  if (!twilioSid || !twilioToken) { logWarn(FUNCTION, 'Twilio credentials not set, skipping SMS'); return false; }
-
-  try {
-    const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
-      method: 'POST',
-      headers: { Authorization: `Basic ${btoa(`${twilioSid}:${twilioToken}`)}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ From: twilioFrom || '', To: to, Body: body }),
-    });
-    return resp.ok;
-  } catch (e) { logError(FUNCTION, 'SMS send failed', e); return false; }
-}
-
 async function createNotification(supabase: any, payload: CommPayload) {
   if (!payload.customer_id) return;
   await supabase.from('notifications').insert({
@@ -62,8 +47,6 @@ async function createNotification(supabase: any, payload: CommPayload) {
   });
 }
 
-import { logWarn } from '../_shared/logger.ts';
-
 serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -74,16 +57,15 @@ serve(async (req) => {
 
     logInfo(FUNCTION, 'Processing communication', { type: payload.type, channel: payload.channel });
 
-    // Resolve recipient email/phone from customer record if not provided
+    // Resolve recipient email from customer record if not provided
     let toEmail = payload.to;
-    let toPhone: string | undefined;
     if (payload.customer_id && !payload.to) {
       const { data: customer } = await supabase.from('customers')
-        .select('email, phone').eq('id', payload.customer_id).single();
-      if (customer) { toEmail = customer.email; toPhone = customer.phone; }
+        .select('email').eq('id', payload.customer_id).single();
+      if (customer) { toEmail = customer.email; }
     }
 
-    const channels = payload.channel === 'all' ? ['email', 'sms', 'dashboard'] : [payload.channel];
+    const channels = payload.channel === 'all' ? ['email', 'dashboard'] : [payload.channel];
     const results: Record<string, boolean> = {};
 
     for (const channel of channels) {
@@ -91,11 +73,6 @@ serve(async (req) => {
         case 'email':
           if (toEmail && payload.subject) {
             results.email = await sendEmail(toEmail, payload.subject, payload.body || '');
-          }
-          break;
-        case 'sms':
-          if (toPhone && payload.body) {
-            results.sms = await sendSMS(toPhone, payload.body);
           }
           break;
         case 'push':

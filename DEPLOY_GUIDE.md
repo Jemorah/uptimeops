@@ -105,11 +105,8 @@ The Vercel-Supabase integration auto-populates these:
    - `STRIPE_SECRET_KEY` = `sk_live_...`
    - `STRIPE_WEBHOOK_SECRET` = `whsec_...`
 
-### Add Email/SMS keys (optional):
+### Add Email key (optional):
 - `RESEND_API_KEY` = `re_...` (for email alerts)
-- `TWILIO_SID` = `AC...`
-- `TWILIO_AUTH_TOKEN` = `...`
-- `TWILIO_PHONE` = `+1234567890`
 
 ---
 

@@ -63,9 +63,6 @@ supabase functions deploy stripe-webhook
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 RESEND_API_KEY=re_xxxxxxxx
-TWILIO_SID=ACxxxxxxxx
-TWILIO_AUTH_TOKEN=xxxxxxxx
-TWILIO_PHONE=+1234567890
 ```
 
 ## Request Format
