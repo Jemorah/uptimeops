@@ -382,15 +382,15 @@ END $$;
 -- ═══════════════════════════════════════════
 -- SEED DATA
 -- ═══════════════════════════════════════════
-INSERT INTO engineer_profiles (id, user_id, name, email, level, is_on_call, total_resolved, avg_resolution_minutes, satisfaction_score) VALUES
-  ('33333333-3333-3333-3333-333333333331', '00000000-0000-0000-0000-000000000003', 'Alex Chen', 'alex@uptimeops.com', 'L2', true, 142, 22, 4.8),
-  ('33333333-3333-3333-3333-333333333332', NULL, 'Jordan Smith', 'jordan@uptimeops.com', 'L1', true, 89, 35, 4.5),
-  ('33333333-3333-3333-3333-333333333333', NULL, 'Riley Park', 'riley@uptimeops.com', 'L3', false, 234, 18, 4.9)
+INSERT INTO engineer_profiles (id, name, email, level, is_on_call, total_resolved, avg_resolution_minutes, satisfaction_score) VALUES
+  ('33333333-3333-3333-3333-333333333331', 'Alex Chen', 'alex@uptimeops.com', 'L2', true, 142, 22, 4.8),
+  ('33333333-3333-3333-3333-333333333332', 'Jordan Smith', 'jordan@uptimeops.com', 'L1', true, 89, 35, 4.5),
+  ('33333333-3333-3333-3333-333333333333', 'Riley Park', 'riley@uptimeops.com', 'L3', false, 234, 18, 4.9)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO coordinator_profiles (id, user_id, name, email, is_lead, can_rollback) VALUES
-  ('44444444-4444-4444-4444-444444444441', '00000000-0000-0000-0000-000000000002', 'Morgan Lee', 'morgan@uptimeops.com', true, true),
-  ('44444444-4444-4444-4444-444444444442', NULL, 'Casey Jones', 'casey@uptimeops.com', false, true)
+INSERT INTO coordinator_profiles (id, name, email, is_lead, can_rollback) VALUES
+  ('44444444-4444-4444-4444-444444444441', 'Morgan Lee', 'morgan@uptimeops.com', true, true),
+  ('44444444-4444-4444-4444-444444444442', 'Casey Jones', 'casey@uptimeops.com', false, true)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO audit_logs (table_name, entity_type, entity_id, action, performed_by_type, new_values) VALUES

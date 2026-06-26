@@ -383,17 +383,13 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 -- ═══════════════════════════════════════════
 -- SEED DATA
 -- ═══════════════════════════════════════════
-INSERT INTO user_roles (user_id, role) VALUES
-  ('00000000-0000-0000-0000-000000000001', 'admin'),
-  ('00000000-0000-0000-0000-000000000002', 'coordinator'),
-  ('00000000-0000-0000-0000-000000000003', 'engineer'),
-  ('00000000-0000-0000-0000-000000000004', 'customer')
-ON CONFLICT DO NOTHING;
+-- NOTE: user_roles are auto-created by the auth trigger (handle_new_user)
+-- when real users sign up. Do NOT seed fake UUIDs — they don't exist in auth.users.
 
-INSERT INTO customers (id, user_id, email, full_name, company_name, website, plan, status, mrr) VALUES
-  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000004', 'demo@acme-corp.com', 'Demo Customer', 'Acme Corp', 'acme-corp.com', 'sentinel', 'active', 249.00),
-  ('11111111-1111-1111-1111-111111111112', NULL, 'lead1@techflow.io', NULL, 'TechFlow', 'techflow.io', 'guardian', 'lead', 0),
-  ('11111111-1111-1111-1111-111111111113', NULL, 'lead2@datavault.net', NULL, 'DataVault', 'datavault.net', 'fortress', 'lead', 0)
+INSERT INTO customers (id, email, full_name, company_name, website, plan, status, mrr) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'demo@acme-corp.com', 'Demo Customer', 'Acme Corp', 'acme-corp.com', 'sentinel', 'active', 249.00),
+  ('11111111-1111-1111-1111-111111111112', 'lead1@techflow.io', NULL, 'TechFlow', 'techflow.io', 'guardian', 'lead', 0),
+  ('11111111-1111-1111-1111-111111111113', 'lead2@datavault.net', NULL, 'DataVault', 'datavault.net', 'fortress', 'lead', 0)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO subscriptions (customer_id, plan, price_cents, incidents_allowance, current_period_start, current_period_end) VALUES

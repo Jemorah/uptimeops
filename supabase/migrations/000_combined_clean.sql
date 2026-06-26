@@ -5,10 +5,6 @@
 -- ═══════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════
--- PART 1: CORE SCHEMA (001)
--- ═══════════════════════════════════════════════════════════════
-
--- ═══════════════════════════════════════════════════════════════
 -- UPTIMEOPS MIGRATION 001: Core Schema
 -- Tables: user_roles, customers, subscriptions, one_time_fixes,
 --         credentials_vault, payment_methods
@@ -393,17 +389,13 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 -- ═══════════════════════════════════════════
 -- SEED DATA
 -- ═══════════════════════════════════════════
-INSERT INTO user_roles (user_id, role) VALUES
-  ('00000000-0000-0000-0000-000000000001', 'admin'),
-  ('00000000-0000-0000-0000-000000000002', 'coordinator'),
-  ('00000000-0000-0000-0000-000000000003', 'engineer'),
-  ('00000000-0000-0000-0000-000000000004', 'customer')
-ON CONFLICT DO NOTHING;
+-- NOTE: user_roles are auto-created by the auth trigger (handle_new_user)
+-- when real users sign up. Do NOT seed fake UUIDs — they don't exist in auth.users.
 
-INSERT INTO customers (id, user_id, email, full_name, company_name, website, plan, status, mrr) VALUES
-  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000004', 'demo@acme-corp.com', 'Demo Customer', 'Acme Corp', 'acme-corp.com', 'sentinel', 'active', 249.00),
-  ('11111111-1111-1111-1111-111111111112', NULL, 'lead1@techflow.io', NULL, 'TechFlow', 'techflow.io', 'guardian', 'lead', 0),
-  ('11111111-1111-1111-1111-111111111113', NULL, 'lead2@datavault.net', NULL, 'DataVault', 'datavault.net', 'fortress', 'lead', 0)
+INSERT INTO customers (id, email, full_name, company_name, website, plan, status, mrr) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'demo@acme-corp.com', 'Demo Customer', 'Acme Corp', 'acme-corp.com', 'sentinel', 'active', 249.00),
+  ('11111111-1111-1111-1111-111111111112', 'lead1@techflow.io', NULL, 'TechFlow', 'techflow.io', 'guardian', 'lead', 0),
+  ('11111111-1111-1111-1111-111111111113', 'lead2@datavault.net', NULL, 'DataVault', 'datavault.net', 'fortress', 'lead', 0)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO subscriptions (customer_id, plan, price_cents, incidents_allowance, current_period_start, current_period_end) VALUES
@@ -1115,15 +1107,15 @@ END $$;
 -- ═══════════════════════════════════════════
 -- SEED DATA
 -- ═══════════════════════════════════════════
-INSERT INTO engineer_profiles (id, user_id, name, email, level, is_on_call, total_resolved, avg_resolution_minutes, satisfaction_score) VALUES
-  ('33333333-3333-3333-3333-333333333331', '00000000-0000-0000-0000-000000000003', 'Alex Chen', 'alex@uptimeops.com', 'L2', true, 142, 22, 4.8),
-  ('33333333-3333-3333-3333-333333333332', NULL, 'Jordan Smith', 'jordan@uptimeops.com', 'L1', true, 89, 35, 4.5),
-  ('33333333-3333-3333-3333-333333333333', NULL, 'Riley Park', 'riley@uptimeops.com', 'L3', false, 234, 18, 4.9)
+INSERT INTO engineer_profiles (id, name, email, level, is_on_call, total_resolved, avg_resolution_minutes, satisfaction_score) VALUES
+  ('33333333-3333-3333-3333-333333333331', 'Alex Chen', 'alex@uptimeops.com', 'L2', true, 142, 22, 4.8),
+  ('33333333-3333-3333-3333-333333333332', 'Jordan Smith', 'jordan@uptimeops.com', 'L1', true, 89, 35, 4.5),
+  ('33333333-3333-3333-3333-333333333333', 'Riley Park', 'riley@uptimeops.com', 'L3', false, 234, 18, 4.9)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO coordinator_profiles (id, user_id, name, email, is_lead, can_rollback) VALUES
-  ('44444444-4444-4444-4444-444444444441', '00000000-0000-0000-0000-000000000002', 'Morgan Lee', 'morgan@uptimeops.com', true, true),
-  ('44444444-4444-4444-4444-444444444442', NULL, 'Casey Jones', 'casey@uptimeops.com', false, true)
+INSERT INTO coordinator_profiles (id, name, email, is_lead, can_rollback) VALUES
+  ('44444444-4444-4444-4444-444444444441', 'Morgan Lee', 'morgan@uptimeops.com', true, true),
+  ('44444444-4444-4444-4444-444444444442', 'Casey Jones', 'casey@uptimeops.com', false, true)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO audit_logs (table_name, entity_type, entity_id, action, performed_by_type, new_values) VALUES
