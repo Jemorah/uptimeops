@@ -1,12 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // CUSTOMER DASHBOARD — Overview of incidents, subscription, status
+// Monochrome + lime accent palette only
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
-import { AlertTriangle, CheckCircle, Clock, Shield, Zap, ArrowRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Shield, Zap, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function CustomerDashboard() {
@@ -21,7 +22,6 @@ export function CustomerDashboard() {
     async function load() {
       if (!user) return;
 
-      // Find customer record
       const { data: customer } = await supabase
         .from('customers')
         .select('id')
@@ -30,7 +30,6 @@ export function CustomerDashboard() {
 
       if (!customer) { setLoading(false); return; }
 
-      // Load incidents
       const { data: incs } = await supabase
         .from('incidents')
         .select('*')
@@ -45,7 +44,6 @@ export function CustomerDashboard() {
         total: (incs || []).length,
       });
 
-      // Load subscription
       const { data: sub } = await supabase
         .from('subscriptions')
         .select('*')
@@ -60,7 +58,6 @@ export function CustomerDashboard() {
 
     load();
 
-    // Realtime subscription
     const channel = supabase
       .channel('customer-incidents')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => load())
@@ -72,7 +69,8 @@ export function CustomerDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-white/40 text-sm animate-pulse">Loading dashboard...</div>
+        <Loader2 className="w-5 h-5 text-lime animate-spin" />
+        <span className="ml-2 text-sm text-white/40">Loading dashboard...</span>
       </div>
     );
   }
@@ -88,20 +86,20 @@ export function CustomerDashboard() {
           <h1 className="text-2xl font-black">Dashboard</h1>
           <p className="text-sm text-white/40 mt-1">Welcome back, {user?.email}</p>
         </div>
-        <Button onClick={() => navigate('/customer/incidents')} className="bg-[#a3e635] text-black hover:bg-[#a3e635]/90">
+        <Button onClick={() => navigate('/customer/incidents')} className="bg-lime text-black hover:bg-lime/90">
           <AlertTriangle className="w-4 h-4 mr-2" /> Report Incident
         </Button>
       </div>
 
-      {/* Stats */}
+      {/* Stats — monochrome + lime only */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Open Incidents', value: stats.open, icon: AlertTriangle, color: 'text-amber-400' },
-          { label: 'Resolved', value: stats.resolved, icon: CheckCircle, color: 'text-[#a3e635]' },
-          { label: 'Total', value: stats.total, icon: Clock, color: 'text-[#22d3ee]' },
+          { label: 'Open', value: stats.open, icon: Clock },
+          { label: 'Resolved', value: stats.resolved, icon: CheckCircle },
+          { label: 'Total', value: stats.total, icon: Zap },
         ].map(s => (
           <div key={s.label} className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
-            <s.icon className={`w-5 h-5 ${s.color} mb-2`} />
+            <s.icon className="w-5 h-5 text-white/40 mb-2" />
             <div className="text-2xl font-black">{s.value}</div>
             <div className="text-xs text-white/40">{s.label}</div>
           </div>
@@ -112,13 +110,13 @@ export function CustomerDashboard() {
       <div className="border border-white/10 rounded-xl p-5 bg-white/[0.02]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Shield className="w-5 h-5 text-[#a3e635]" />
+            <Shield className="w-5 h-5 text-lime" />
             <div>
               <div className="text-sm font-bold">{planName} Plan</div>
               <div className="text-xs text-white/40">{planPrice} — {subscription?.status || 'active'}</div>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigate('/customer/billing')} className="border-white/10 hover:bg-white/5">
+          <Button variant="outline" size="sm" onClick={() => navigate('/customer/billing')} className="border-white/10 hover:bg-white/5 text-white/60">
             Manage <ArrowRight className="w-3 h-3 ml-1" />
           </Button>
         </div>
@@ -128,14 +126,14 @@ export function CustomerDashboard() {
       <div className="border border-white/10 rounded-xl bg-white/[0.02]">
         <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
           <h2 className="text-sm font-bold">Recent Incidents</h2>
-          <button onClick={() => navigate('/customer/incidents')} className="text-xs text-[#a3e635] hover:underline">
+          <button onClick={() => navigate('/customer/incidents')} className="text-xs text-lime hover:underline">
             View All
           </button>
         </div>
         {incidents.length === 0 ? (
           <div className="p-8 text-center text-sm text-white/30">
             <Zap className="w-8 h-8 mx-auto mb-2 text-white/10" />
-            No incidents yet. That's great news!
+            No incidents yet. That is great news!
           </div>
         ) : (
           <div className="divide-y divide-white/5">
@@ -146,9 +144,9 @@ export function CustomerDashboard() {
                 className="w-full px-5 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
               >
                 <div className={`w-2 h-2 rounded-full shrink-0 ${
-                  inc.priority === 'P1_CRITICAL' ? 'bg-red-500' :
-                  inc.priority === 'P2_HIGH' ? 'bg-amber-400' :
-                  'bg-[#22d3ee]'
+                  inc.priority === 'P1_CRITICAL' ? 'bg-white/60' :
+                  inc.priority === 'P2_HIGH' ? 'bg-white/40' :
+                  'bg-white/20'
                 }`} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{inc.title}</div>

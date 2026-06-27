@@ -44,3 +44,4 @@ coverage
 *.tsbuildinfo
 supabase_backup_*
 package-lock.json
+.vercel

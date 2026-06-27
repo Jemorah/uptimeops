@@ -32,12 +32,12 @@ export function CustomerComms() {
   const notifs = useNotifications();
 
   const stats = [
-    { label: 'Total Sent', value: comms.stats.totalSent, color: 'text-cyan' },
-    { label: 'Delivered', value: comms.stats.delivered, color: 'text-green-400' },
-    { label: 'Failed', value: comms.stats.failed, color: 'text-red-400' },
-    { label: 'Opened', value: comms.stats.opened, color: 'text-purple-400' },
-    { label: 'Pending Retry', value: comms.stats.pendingRetry, color: 'text-yellow-400' },
-    { label: 'Unread', value: notifs.unreadCount, color: 'text-magenta' },
+    { label: 'Total Sent', value: comms.stats.totalSent },
+    { label: 'Delivered', value: comms.stats.delivered },
+    { label: 'Failed', value: comms.stats.failed },
+    { label: 'Opened', value: comms.stats.opened },
+    { label: 'Pending Retry', value: comms.stats.pendingRetry },
+    { label: 'Unread', value: notifs.unreadCount },
   ];
 
   return (
@@ -63,7 +63,7 @@ export function CustomerComms() {
       <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
         {stats.map(s => (
           <div key={s.label} className="bg-surface border border-white/5 p-3 text-center">
-            <div className={`text-lg font-black font-mono ${s.color}`}>{s.value}</div>
+            <div className="text-lg font-black font-mono text-white/70">{s.value}</div>
             <div className="text-[10px] text-white/30 uppercase tracking-wider">{s.label}</div>
           </div>
         ))}
@@ -96,7 +96,7 @@ export function CustomerComms() {
                 <div className="space-y-2">
                   {notifs.notifications.slice(0, 4).map(n => (
                     <div key={n.id} className={`flex items-start gap-2 p-2 ${!n.read ? 'bg-lime/[0.02]' : ''}`}>
-                      <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${!n.read ? 'bg-magenta' : 'bg-white/10'}`} />
+                      <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${!n.read ? 'bg-lime' : 'bg-white/10'}`} />
                       <div>
                         <div className={`text-xs ${!n.read ? 'font-bold text-white/70' : 'text-white/40'}`}>{n.title}</div>
                         <div className="text-[10px] text-white/20">{n.message}</div>
@@ -114,12 +114,12 @@ export function CustomerComms() {
           <div className="space-y-3">
             {notifs.notifications.map(n => (
               <div key={n.id} className={`flex items-start gap-3 p-3 bg-surface border border-white/5 ${!n.read ? 'border-lime/10' : ''}`}>
-                <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${!n.read ? 'bg-magenta' : 'bg-white/10'}`} />
+                <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${!n.read ? 'bg-lime' : 'bg-white/10'}`} />
                 <div className="flex-1">
                   <div className={`text-xs ${!n.read ? 'font-bold text-white' : 'text-white/50'}`}>{n.title}</div>
                   <p className="text-xs text-white/30 mt-1">{n.message}</p>
                   <div className="flex items-center gap-3 mt-2">
-                    {!n.read && <button onClick={() => notifs.markRead(n.id)} className="text-[10px] text-cyan hover:text-cyan/70">Mark read</button>}
+                    {!n.read && <button onClick={() => notifs.markRead(n.id)} className="text-[10px] text-white/40 hover:text-white/60">Mark read</button>}
                     {n.actionLabel && <button className="text-[10px] text-lime hover:text-lime/70">{n.actionLabel}</button>}
                     <button onClick={() => notifs.dismiss(n.id)} className="text-[10px] text-white/20 hover:text-white/40">Dismiss</button>
                   </div>

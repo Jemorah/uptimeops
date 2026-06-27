@@ -14,9 +14,9 @@ interface Props {
   allowedRoles?: UserRole[];
 }
 
-// Grace period: wait this many ms for auth state to settle before redirecting.
-// This prevents race conditions where onAuthStateChange hasn't fired yet.
-const AUTH_SETTLE_MS = 800;
+// Grace period: brief wait for auth state to settle before redirecting.
+// Reduced to 100ms since signIn() now loads state synchronously.
+const AUTH_SETTLE_MS = 100;
 
 export function ProtectedRoute({ children, allowedRoles }: Props) {
   const navigate = useNavigate();

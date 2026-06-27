@@ -37,7 +37,7 @@ export function CustomerBilling() {
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-sm text-green-500 font-medium">Active</span>
+            <span className="text-sm text-lime font-medium">Active</span>
           </div>
         </div>
 
@@ -122,7 +122,7 @@ export function CustomerBilling() {
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-sm font-mono font-bold">{inv.amount}</span>
-                <span className="text-xs font-bold text-green-500 uppercase">{inv.status}</span>
+                <span className="text-xs font-bold text-lime uppercase">{inv.status}</span>
               </div>
             </div>
           ))}

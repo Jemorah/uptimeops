@@ -1,8 +1,9 @@
 // ═══════════════════════════════════════════════════════════════
-// PREFERENCE SETTINGS — SMS/Email toggles, quiet hours, categories
+// PREFERENCE SETTINGS — Email toggles, quiet hours, categories
+// SMS removed — will be added back at scale after 6 months
 // ═══════════════════════════════════════════════════════════════
 
-import { Mail, Smartphone, Bell, LayoutDashboard, Moon, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Mail, Bell, LayoutDashboard, Moon, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { CommPreferences } from './types';
 
 interface PreferenceSettingsProps {
@@ -29,31 +30,29 @@ export function PreferenceSettings({ preferences, onUpdate }: PreferenceSettings
   return (
     <div className="bg-surface border border-white/5">
       <div className="p-4 border-b border-white/5">
-        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-          <Mail className="w-4 h-4 text-cyan" />
+        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-white/60">
+          <Mail className="w-4 h-4 text-lime" />
           Communication Preferences
         </h3>
       </div>
 
-      {/* Channel Toggles */}
+      {/* Channel Toggles — Email only, no SMS */}
       <div className="p-4 border-b border-white/5 space-y-2">
         <div className="text-[10px] text-white/30 uppercase tracking-wider mb-3">Channels</div>
         <Toggle label="Email" icon={Mail} enabled={preferences.emailEnabled} onChange={() => onUpdate({ emailEnabled: !preferences.emailEnabled })} desc="Receive email notifications" />
-        <Toggle label="SMS" icon={Smartphone} enabled={preferences.smsEnabled} onChange={() => onUpdate({ smsEnabled: !preferences.smsEnabled })} desc="Receive SMS text alerts" />
         <Toggle label="Push Notifications" icon={Bell} enabled={preferences.pushEnabled} onChange={() => onUpdate({ pushEnabled: !preferences.pushEnabled })} desc="Browser push notifications" />
         <Toggle label="Dashboard" icon={LayoutDashboard} enabled={preferences.dashboardEnabled} onChange={() => onUpdate({ dashboardEnabled: !preferences.dashboardEnabled })} desc="In-app notification badges" />
+        <p className="text-[10px] text-white/20 pt-2">
+          SMS notifications coming soon. Contact support for urgent alerts.
+        </p>
       </div>
 
-      {/* Contact Info */}
+      {/* Contact Info — Email only, no phone */}
       <div className="p-4 border-b border-white/5 space-y-3">
         <div className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Contact Details</div>
         <div>
           <label className="text-[10px] text-white/30 mb-1 block">Email Address</label>
           <input value={preferences.emailAddress} onChange={e => onUpdate({ emailAddress: e.target.value })} className="w-full bg-black/30 border border-white/10 text-xs text-white/70 px-3 py-2 outline-none focus:border-lime/30" />
-        </div>
-        <div>
-          <label className="text-[10px] text-white/30 mb-1 block">Phone Number</label>
-          <input value={preferences.phoneNumber || ''} onChange={e => onUpdate({ phoneNumber: e.target.value })} placeholder="+1-555-0000" className="w-full bg-black/30 border border-white/10 text-xs text-white/70 px-3 py-2 outline-none focus:border-lime/30" />
         </div>
       </div>
 

@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import {
   AlertTriangle, CheckCircle, Clock,
-  Search
+  Search, Loader2
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -9,48 +11,84 @@ import { Badge } from '@/components/ui/badge';
 interface Incident {
   id: string;
   title: string;
-  status: 'open' | 'resolved' | 'escalated' | 'repairing';
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  site: string;
-  createdAt: string;
-  resolvedAt?: string;
-  aiConfidence?: number;
+  status: string;
+  priority: string;
+  website_url: string;
+  created_at: string;
+  resolved_at?: string;
+  description?: string;
 }
 
-const mockIncidents: Incident[] = [
-  { id: 'INC-0641', title: 'Database connection timeout', status: 'resolved', severity: 'high', site: 'acme-corp.com', createdAt: '2026-06-24 10:15', resolvedAt: '2026-06-24 10:18', aiConfidence: 97 },
-  { id: 'INC-0640', title: 'Memory leak in checkout service', status: 'resolved', severity: 'medium', site: 'shop.acme-corp.com', createdAt: '2026-06-23 18:22', resolvedAt: '2026-06-23 18:35', aiConfidence: 94 },
-  { id: 'INC-0639', title: 'CSS asset 404 on checkout page', status: 'resolved', severity: 'low', site: 'shop.acme-corp.com', createdAt: '2026-06-22 09:10', resolvedAt: '2026-06-22 09:14', aiConfidence: 99 },
-  { id: 'INC-0638', title: 'API rate limit exceeded', status: 'resolved', severity: 'medium', site: 'api.acme-corp.com', createdAt: '2026-06-21 14:30', resolvedAt: '2026-06-21 14:38', aiConfidence: 96 },
-  { id: 'INC-0637', title: 'SSL certificate expiry warning', status: 'resolved', severity: 'low', site: 'acme-corp.com', createdAt: '2026-06-20 00:00', resolvedAt: '2026-06-20 00:05', aiConfidence: 100 },
-  { id: 'INC-0635', title: 'Load balancer health check failure', status: 'resolved', severity: 'high', site: 'acme-corp.com', createdAt: '2026-06-18 11:45', resolvedAt: '2026-06-18 11:52', aiConfidence: 91 },
-];
+const STATUS_MAP: Record<string, { label: string; icon: React.ReactNode }> = {
+  open:        { label: 'Open',        icon: <AlertTriangle className="w-3.5 h-3.5 text-white/60" /> },
+  repairing:   { label: 'Repairing',   icon: <Clock className="w-3.5 h-3.5 text-lime animate-spin" /> },
+  escalated:   { label: 'Escalated',   icon: <AlertTriangle className="w-3.5 h-3.5 text-white/60" /> },
+  resolved:    { label: 'Resolved',    icon: <CheckCircle className="w-3.5 h-3.5 text-lime" /> },
+  closed:      { label: 'Closed',      icon: <CheckCircle className="w-3.5 h-3.5 text-white/40" /> },
+};
+
+const PRIORITY_MAP: Record<string, string> = {
+  P1_CRITICAL: 'Critical',
+  P2_HIGH: 'High',
+  P3_MEDIUM: 'Medium',
+  P4_LOW: 'Low',
+};
 
 export function CustomerIncidents() {
+  const { user } = useAuth();
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  const filtered = mockIncidents.filter((inc) => {
-    const matchesSearch = inc.title.toLowerCase().includes(search.toLowerCase()) || inc.id.toLowerCase().includes(search.toLowerCase());
-    const matchesSeverity = filterSeverity === 'all' || inc.severity === filterSeverity;
+  useEffect(() => {
+    async function load() {
+      if (!user) return;
+
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!customer) { setLoading(false); return; }
+
+      const { data: incs } = await supabase
+        .from('incidents')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false });
+
+      setIncidents(incs || []);
+      setLoading(false);
+    }
+
+    load();
+
+    const channel = supabase
+      .channel('incidents-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => load())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  const filtered = incidents.filter((inc) => {
+    const matchesSearch = !search ||
+      inc.title?.toLowerCase().includes(search.toLowerCase()) ||
+      inc.id?.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = filterStatus === 'all' || inc.status === filterStatus;
-    return matchesSearch && matchesSeverity && matchesStatus;
+    return matchesSearch && matchesStatus;
   });
 
-  const severityColors = {
-    critical: 'bg-red-500/10 text-red-500 border-red-500/20',
-    high: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-    medium: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-    low: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  };
-
-  const statusIcons = {
-    open: <AlertTriangle className="w-4 h-4 text-yellow-500" />,
-    resolved: <CheckCircle className="w-4 h-4 text-green-500" />,
-    escalated: <AlertTriangle className="w-4 h-4 text-red-500" />,
-    repairing: <Clock className="w-4 h-4 text-cyan animate-spin" />,
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-5 h-5 text-lime animate-spin" />
+        <span className="ml-2 text-sm text-white/40">Loading incidents...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -71,17 +109,6 @@ export function CustomerIncidents() {
           />
         </div>
         <select
-          value={filterSeverity}
-          onChange={(e) => setFilterSeverity(e.target.value)}
-          className="bg-surface border border-white/10 text-white text-sm px-3 py-2 focus:border-lime outline-none"
-        >
-          <option value="all">All Severities</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
           className="bg-surface border border-white/10 text-white text-sm px-3 py-2 focus:border-lime outline-none"
@@ -91,6 +118,7 @@ export function CustomerIncidents() {
           <option value="repairing">Repairing</option>
           <option value="escalated">Escalated</option>
           <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
         </select>
       </div>
 
@@ -102,45 +130,42 @@ export function CustomerIncidents() {
               <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">ID</th>
               <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Title</th>
               <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Site</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Severity</th>
+              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Priority</th>
               <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Status</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">AI Confidence</th>
               <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Created</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {filtered.map((inc) => (
-              <tr key={inc.id} className="hover:bg-white/[0.02] transition-colors">
-                <td className="p-4 text-sm font-mono text-white/60">{inc.id}</td>
-                <td className="p-4 text-sm font-medium">{inc.title}</td>
-                <td className="p-4 text-sm text-white/60">{inc.site}</td>
-                <td className="p-4">
-                  <Badge variant="outline" className={`text-xs capitalize ${severityColors[inc.severity]}`}>
-                    {inc.severity}
-                  </Badge>
-                </td>
-                <td className="p-4">
-                  <div className="flex items-center gap-2">
-                    {statusIcons[inc.status]}
-                    <span className="text-sm capitalize">{inc.status}</span>
-                  </div>
-                </td>
-                <td className="p-4">
-                  {inc.aiConfidence ? (
-                    <span className={`text-sm font-mono font-bold ${inc.aiConfidence >= 90 ? 'text-green-500' : inc.aiConfidence >= 70 ? 'text-yellow-500' : 'text-red-500'}`}>
-                      {inc.aiConfidence}%
-                    </span>
-                  ) : (
-                    <span className="text-sm text-white/30">-</span>
-                  )}
-                </td>
-                <td className="p-4 text-sm text-white/40 font-mono">{inc.createdAt}</td>
-              </tr>
-            ))}
+            {filtered.map((inc) => {
+              const statusInfo = STATUS_MAP[inc.status] || STATUS_MAP.open;
+              return (
+                <tr key={inc.id} className="hover:bg-white/[0.02] transition-colors">
+                  <td className="p-4 text-sm font-mono text-white/40">{inc.id?.slice(0, 8)}</td>
+                  <td className="p-4 text-sm font-medium">{inc.title || 'Untitled'}</td>
+                  <td className="p-4 text-sm text-white/50">{inc.website_url}</td>
+                  <td className="p-4">
+                    <Badge variant="outline" className="text-[10px] uppercase border-white/10 text-white/60">
+                      {PRIORITY_MAP[inc.priority] || inc.priority}
+                    </Badge>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      {statusInfo.icon}
+                      <span className="text-sm">{statusInfo.label}</span>
+                    </div>
+                  </td>
+                  <td className="p-4 text-sm text-white/40 font-mono">
+                    {new Date(inc.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {filtered.length === 0 && (
-          <div className="p-8 text-center text-sm text-white/40">No incidents found matching your filters.</div>
+          <div className="p-8 text-center text-sm text-white/40">
+            {incidents.length === 0 ? 'No incidents yet. That is great news!' : 'No incidents match your filters.'}
+          </div>
         )}
       </div>
     </div>

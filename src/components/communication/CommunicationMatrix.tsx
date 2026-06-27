@@ -1,43 +1,47 @@
 // ═══════════════════════════════════════════════════════════════
-// COMMUNICATION MATRIX
-// Visual 12-stage table: stage, channels, trigger, priority
+// COMMUNICATION MATRIX — Email + Dashboard only, no SMS
+// Monochrome + lime palette
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
-import { Mail, MessageSquare, LayoutDashboard, Smartphone, AlertTriangle, Clock, Zap, Filter } from 'lucide-react';
-import { COMM_MATRIX, CHANNEL_COLORS } from './types';
+import { Mail, MessageSquare, LayoutDashboard, AlertTriangle, Clock, Zap, Filter } from 'lucide-react';
+import { COMM_MATRIX } from './types';
 import type { CommMatrixRow } from './types';
 
 const channelIcons: Record<string, typeof Mail> = {
   email: Mail,
-  sms: Smartphone,
   dashboard: LayoutDashboard,
   push: MessageSquare,
 };
 
-const priorityColors = {
-  critical: 'text-red-400 bg-red/10 border-red/20',
-  high: 'text-orange-400 bg-orange/10 border-orange/20',
-  medium: 'text-yellow-400 bg-yellow/10 border-yellow/20',
-  low: 'text-white/30 bg-white/5 border-white/10',
+const priorityStyles: Record<string, string> = {
+  critical: 'border-white/20 bg-white/5 text-white/60',
+  high:     'border-white/15 bg-white/[0.03] text-white/50',
+  medium:   'border-white/10 bg-white/[0.02] text-white/40',
+  low:      'border-white/5 bg-transparent text-white/30',
 };
 
 export function CommunicationMatrix() {
   const [filter, setFilter] = useState<string>('all');
 
-  const filtered = filter === 'all' ? COMM_MATRIX : COMM_MATRIX.filter(r => r.channels.includes(filter as never) || r.priority === filter);
+  // Only show rows that don't include SMS as primary channel
+  const noSmsMatrix = COMM_MATRIX.filter(r => !r.channels.includes('sms' as never));
+
+  const filtered = filter === 'all'
+    ? noSmsMatrix
+    : noSmsMatrix.filter(r => r.channels.includes(filter as never) || r.priority === filter);
 
   return (
     <div className="bg-surface border border-white/5">
       <div className="p-4 border-b border-white/5">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+          <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-white/60">
             <Zap className="w-4 h-4 text-lime" />
             Communication Matrix
           </h3>
           <div className="flex items-center gap-1">
             <Filter className="w-3 h-3 text-white/20 mr-1" />
-            {['all', 'email', 'sms', 'dashboard', 'critical', 'high'].map(f => (
+            {['all', 'email', 'dashboard', 'critical', 'high'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -65,10 +69,13 @@ export function CommunicationMatrix() {
           </thead>
           <tbody className="divide-y divide-white/5">
             {filtered.map((row) => (
-              <MatrixRow key={row.stageKey} row={row} index={COMM_MATRIX.indexOf(row) + 1} />
+              <MatrixRow key={row.stageKey} row={row} index={noSmsMatrix.indexOf(row) + 1} />
             ))}
           </tbody>
         </table>
+        {filtered.length === 0 && (
+          <div className="p-8 text-center text-sm text-white/30">No stages match the filter.</div>
+        )}
       </div>
     </div>
   );
@@ -76,6 +83,9 @@ export function CommunicationMatrix() {
 
 function MatrixRow({ row, index }: { row: CommMatrixRow; index: number }) {
   const [hovered, setHovered] = useState(false);
+
+  // Filter SMS out of displayed channels
+  const displayChannels = row.channels.filter((ch: string) => ch !== 'sms');
 
   return (
     <tr
@@ -90,13 +100,12 @@ function MatrixRow({ row, index }: { row: CommMatrixRow; index: number }) {
       </td>
       <td className="p-3">
         <div className="flex gap-1.5">
-          {row.channels.map(ch => {
+          {displayChannels.map((ch: string) => {
             const Icon = channelIcons[ch] || Mail;
             return (
               <span
                 key={ch}
-                className="flex items-center gap-1 px-1.5 py-0.5 border text-[10px] font-bold uppercase"
-                style={{ color: CHANNEL_COLORS[ch], borderColor: `${CHANNEL_COLORS[ch]}30`, backgroundColor: `${CHANNEL_COLORS[ch]}10` }}
+                className="flex items-center gap-1 px-1.5 py-0.5 border border-white/10 text-white/40 text-[10px] font-bold uppercase"
               >
                 <Icon className="w-2.5 h-2.5" />
                 {ch}
@@ -112,7 +121,7 @@ function MatrixRow({ row, index }: { row: CommMatrixRow; index: number }) {
         </span>
       </td>
       <td className="p-3">
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase border ${priorityColors[row.priority]}`}>
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase border ${priorityStyles[row.priority]}`}>
           {row.priority === 'critical' && <AlertTriangle className="w-2.5 h-2.5" />}
           {row.priority}
         </span>

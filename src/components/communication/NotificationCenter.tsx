@@ -1,6 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// NOTIFICATION CENTER
-// In-app notification bell with real-time badges
+// NOTIFICATION CENTER — Monochrome + lime only
 // ═══════════════════════════════════════════════════════════════
 
 import { Bell, CheckCircle, XCircle, AlertTriangle, Info, X, CheckCheck, Clock } from 'lucide-react';
@@ -24,12 +23,13 @@ const typeIcons: Record<AppNotification['type'], typeof Info> = {
   alert: AlertTriangle,
 };
 
+// Monochrome type colors — only lime for success, white/gray for everything else
 const typeColors: Record<AppNotification['type'], string> = {
-  info: 'text-cyan',
+  info: 'text-white/40',
   success: 'text-lime',
-  warning: 'text-yellow-400',
-  error: 'text-red-400',
-  alert: 'text-orange-400',
+  warning: 'text-white/40',
+  error: 'text-white/40',
+  alert: 'text-white/40',
 };
 
 export function NotificationCenter({ notifications, unreadCount, isOpen, onToggle, onMarkRead, onMarkAllRead, onDismiss }: NotificationCenterProps) {
@@ -39,7 +39,7 @@ export function NotificationCenter({ notifications, unreadCount, isOpen, onToggl
       <button onClick={onToggle} className="relative p-2 text-white/40 hover:text-white transition-colors">
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 bg-magenta text-white text-[9px] font-bold flex items-center justify-center border border-void animate-pulse">
+          <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 bg-lime text-black text-[9px] font-bold flex items-center justify-center border border-void animate-pulse">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -55,7 +55,7 @@ export function NotificationCenter({ notifications, unreadCount, isOpen, onToggl
                 <Bell className="w-4 h-4 text-lime" />
                 <span className="text-xs font-bold uppercase tracking-wider">Notifications</span>
                 {unreadCount > 0 && (
-                  <span className="text-[10px] text-magenta font-bold">{unreadCount} new</span>
+                  <span className="text-[10px] text-lime font-bold">{unreadCount} new</span>
                 )}
               </div>
               {unreadCount > 0 && (
@@ -87,7 +87,7 @@ export function NotificationCenter({ notifications, unreadCount, isOpen, onToggl
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className={`text-xs font-bold ${!notif.read ? 'text-white' : 'text-white/50'}`}>{notif.title}</span>
-                              {!notif.read && <div className="w-1.5 h-1.5 rounded-full bg-magenta flex-shrink-0" />}
+                              {!notif.read && <div className="w-1.5 h-1.5 rounded-full bg-lime flex-shrink-0" />}
                             </div>
                             <p className="text-[10px] text-white/40 mt-0.5 leading-relaxed">{notif.message}</p>
                             <div className="flex items-center justify-between mt-1.5">
@@ -97,7 +97,7 @@ export function NotificationCenter({ notifications, unreadCount, isOpen, onToggl
                               </span>
                               <div className="flex items-center gap-2">
                                 {notif.actionLabel && (
-                                  <button className="text-[9px] text-cyan hover:text-cyan/70 transition-colors font-bold uppercase">
+                                  <button className="text-[9px] text-white/40 hover:text-white/60 transition-colors font-bold uppercase">
                                     {notif.actionLabel}
                                   </button>
                                 )}
