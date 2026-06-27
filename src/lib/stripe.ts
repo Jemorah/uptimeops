@@ -1,28 +1,38 @@
 // ═══════════════════════════════════════════════════════════════
 // STRIPE CLIENT — UptimeOps
-// Lazy-loads Stripe.js to avoid build dependency issues
+// Loads Stripe.js from CDN to avoid npm install issues on Vercel
 // ═══════════════════════════════════════════════════════════════
 
 import { STRIPE_KEY } from './constants';
 
-let stripePromise: Promise<any> | null = null;
-
-export async function getStripe(): Promise<any> {
-  if (!stripePromise) {
-    // Dynamic import avoids build-time dependency on @stripe/stripe-js
-    const { loadStripe } = await import('@stripe/stripe-js');
-    stripePromise = loadStripe(STRIPE_KEY);
-  }
-  return stripePromise;
+// Add Stripe.js script to document if not present
+function loadStripeScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if ((window as any).Stripe) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://js.stripe.com/v3/';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Stripe.js'));
+    document.head.appendChild(script);
+  });
 }
 
-export async function createCheckoutSession(planType: 'guardian' | 'sentinel' | 'fortress', billingCycle: 'monthly' | 'yearly') {
-  const stripe = await getStripe();
-  if (!stripe) throw new Error('Stripe not initialized');
+async function getStripeInstance(): Promise<any> {
+  await loadStripeScript();
+  const Stripe = (window as any).Stripe;
+  if (!Stripe) throw new Error('Stripe.js not available');
+  return Stripe(STRIPE_KEY);
+}
+
+export async function createCheckoutSession(
+  planType: 'guardian' | 'sentinel' | 'fortress',
+  billingCycle: 'monthly' | 'yearly'
+) {
+  const stripe = await getStripeInstance();
 
   const productId = billingCycle === 'yearly'
-    ? (planType === 'guardian' ? 'prod_Um9dAynxxwolzX' : planType === 'sentinel' ? 'prod_Um9gZlxDs7fk4l' : 'prod_Um9huwzGFCJaBa')
-    : (planType === 'guardian' ? 'prod_Um79wEliQGos8X' : planType === 'sentinel' ? 'prod_Um7AYtqRId4owu' : 'prod_Um7Bx7cqfF4MvC');
+    ? (planType === 'guardian' ? 'price_guardian_yearly' : planType === 'sentinel' ? 'price_sentinel_yearly' : 'price_fortress_yearly')
+    : (planType === 'guardian' ? 'price_guardian_monthly' : planType === 'sentinel' ? 'price_sentinel_monthly' : 'price_fortress_monthly');
 
   const { error } = await stripe.redirectToCheckout({
     lineItems: [{ price: productId, quantity: 1 }],
@@ -35,12 +45,11 @@ export async function createCheckoutSession(planType: 'guardian' | 'sentinel' | 
 }
 
 export async function createOneTimeCheckout(fixType: 'rapid' | 'critical' | 'catastrophic') {
-  const stripe = await getStripe();
-  if (!stripe) throw new Error('Stripe not initialized');
+  const stripe = await getStripeInstance();
 
-  const productId = fixType === 'rapid' ? 'prod_Um718W8HxLu5q0'
-    : fixType === 'critical' ? 'prod_Um74N2ScOrpsh0'
-    : 'prod_Um75fvmmmJ9tTN';
+  const productId = fixType === 'rapid' ? 'price_rapid_fix'
+    : fixType === 'critical' ? 'price_critical_fix'
+    : 'price_catastrophic_fix';
 
   const { error } = await stripe.redirectToCheckout({
     lineItems: [{ price: productId, quantity: 1 }],
