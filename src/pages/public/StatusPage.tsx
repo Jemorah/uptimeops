@@ -75,7 +75,7 @@ export function StatusPage() {
   const allOperational = services.every(s => s.status === 'operational');
 
   return (
-    <div className="pt-24 pb-16 min-h-screen">
+    <div className="pt-24 pb-16 min-h-screen bg-void text-white">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-4">

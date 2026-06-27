@@ -263,7 +263,7 @@ export function PricingPage() {
   const tiers = mode === 'onetime' ? ONETIME_TIERS : SUB_TIERS;
 
   return (
-    <div className="pt-24 pb-16 min-h-screen">
+    <div className="pt-24 pb-16 min-h-screen bg-void text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* ── Header ── */}
