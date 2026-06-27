@@ -60,7 +60,13 @@ export const STRIPE_PRODUCTS = {
 } as const;
 
 // ── Stripe Publishable Key ──
-export const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+// Vercel Stripe integration uses NEXT_PUBLIC_ prefix (Next.js convention)
+// We also check STRIPE_PUBLISHABLE_KEY and VITE_ prefixed variants
+export const STRIPE_KEY =
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
+  import.meta.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+  import.meta.env.STRIPE_PUBLISHABLE_KEY ||
+  '';
 
 // ── Pricing ──
 export const PLANS = {
@@ -68,7 +74,7 @@ export const PLANS = {
     name: 'Guardian',
     price: 99,
     incidents: 3,
-    responseTime: '15 min',
+    responseTime: '< 2h',
     productMonthly: STRIPE_PRODUCTS.guardianMonthly,
     productYearly: STRIPE_PRODUCTS.guardianYearly,
   },

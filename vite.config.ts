@@ -1,33 +1,21 @@
 // ═══════════════════════════════════════════════════════════════
 // VITE CONFIG — UptimeOps
-// Vite 7 + React 19 + TypeScript + Tailwind + Sentry
-// Production: Code splitting, asset optimization, Sentry source maps
+// Vite 7 + React 19 + TypeScript + Tailwind
+// Production: Code splitting, asset optimization
 // ═══════════════════════════════════════════════════════════════
 
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { sentryVitePlugin } from "@sentry/vite-plugin";
 import path from "path";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
   const isProd = mode === "production";
-  const enableSentry = isProd && env.VITE_SENTRY_DSN;
 
   return {
     base: "/",
     
     plugins: [
       react(),
-      // Sentry source maps upload (production only)
-      enableSentry && sentryVitePlugin({
-        org: env.VITE_SENTRY_ORG,
-        project: env.VITE_SENTRY_PROJECT,
-        authToken: env.SENTRY_AUTH_TOKEN,
-        sourcemaps: {
-          filesToDeleteAfterUpload: ["**/*.js.map"],
-        },
-      }),
     ].filter(Boolean),
 
     resolve: {
@@ -66,36 +54,44 @@ export default defineConfig(({ mode }) => {
       // Code splitting optimization
       rollupOptions: {
         output: {
-          manualChunks: {
-            // React core
-            "react-core": ["react", "react-dom", "react-router-dom"],
-            // UI Framework
-            "ui-framework": ["@radix-ui/react-dialog", "@radix-ui/react-tabs", "@radix-ui/react-tooltip"],
-            // shadcn/ui components (bulk)
-            "shadcn": [
-              "class-variance-authority",
-              "clsx",
-              "tailwind-merge",
-              "lucide-react",
-            ],
-            // Charts
-            charts: ["recharts"],
-            // 3D / Animation
-            "3d": ["three", "gsap", "postprocessing"],
-            // Forms
-            forms: ["react-hook-form", "zod", "@hookform/resolvers"],
-            // Supabase
-            supabase: ["@supabase/supabase-js"],
-            // Data
-            data: ["@tanstack/react-query", "zustand"],
+          manualChunks: (id: string) => {
+            if (id.includes("node_modules")) {
+              if (id.includes("react") || id.includes("react-dom") || id.includes("react-router-dom")) {
+                return "react-core";
+              }
+              if (id.includes("@radix-ui")) {
+                return "ui-framework";
+              }
+              if (id.includes("recharts")) {
+                return "charts";
+              }
+              if (id.includes("three") || id.includes("gsap") || id.includes("postprocessing")) {
+                return "3d";
+              }
+              if (id.includes("react-hook-form") || id.includes("zod") || id.includes("@hookform")) {
+                return "forms";
+              }
+              if (id.includes("@supabase")) {
+                return "supabase";
+              }
+              if (id.includes("@tanstack") || id.includes("zustand")) {
+                return "data";
+              }
+              if (
+                id.includes("class-variance-authority") ||
+                id.includes("tailwind-merge") ||
+                id.includes("lucide-react")
+              ) {
+                return "ui-utils";
+              }
+              return "vendor";
+            }
           },
         },
       },
 
       // Chunk size warning
       chunkSizeWarningLimit: 500,
-
-      // Minification (uses esbuild by default)
     },
 
     // CSS

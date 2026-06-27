@@ -63,12 +63,20 @@ export function LoginPage() {
   }
 
   async function handleOAuth(provider: 'github' | 'google') {
+    setError('');
     setIsLoading(true);
     try {
-      await signInWithOAuth(provider);
-      // OAuth redirects the browser — no need to navigate
+      const { error } = await signInWithOAuth(provider);
+      if (error) {
+        setError(error.message);
+        toast.error(error.message);
+      }
+      // If no error, the browser is being redirected to the OAuth provider
     } catch (err: any) {
-      setError(err.message || `Failed to sign in with ${provider}`);
+      const msg = err?.message || `Failed to sign in with ${provider}`;
+      setError(msg);
+      toast.error(msg);
+    } finally {
       setIsLoading(false);
     }
   }

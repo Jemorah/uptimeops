@@ -18,7 +18,7 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signUp: (email: string, password: string, metadata?: { full_name?: string }) => Promise<{ error: AuthError | null }>;
-  signInWithOAuth: (provider: Provider) => Promise<void>;
+  signInWithOAuth: (provider: Provider) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<{ error: AuthError | null }>;
 }
@@ -30,10 +30,17 @@ const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
-  signInWithOAuth: async () => {},
+  signInWithOAuth: async () => ({ error: null }),
   signOut: async () => {},
   sendPasswordReset: async () => ({ error: null }),
 });
+
+// Human-readable provider names
+const PROVIDER_NAMES: Record<string, string> = {
+  google: 'Google',
+  github: 'GitHub',
+  email: 'Email',
+};
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -91,29 +98,93 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        // Provide more helpful error messages
+        let friendlyMessage = error.message;
+        if (error.message.includes('Invalid login credentials')) {
+          friendlyMessage = 'Invalid email or password. Please try again.';
+        } else if (error.message.includes('Email not confirmed')) {
+          friendlyMessage = 'Please confirm your email address before signing in.';
+        }
+        return { error: { ...error, message: friendlyMessage } as AuthError };
+      }
+      if (!data.session) {
+        return { error: { message: 'No session created. Please try again.', name: 'AuthError', status: 400 } as AuthError };
+      }
+      return { error: null };
+    } catch (err: any) {
+      return { error: { message: err?.message || 'An unexpected error occurred. Please try again.', name: 'AuthError', status: 500 } as AuthError };
+    }
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, metadata?: { full_name?: string }) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: metadata || {},
-        emailRedirectTo: `${window.location.origin}/#/login`,
-      },
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: metadata || {},
+          emailRedirectTo: `${window.location.origin}/#/login`,
+        },
+      });
+      return { error };
+    } catch (err: any) {
+      return { error: { message: err?.message || 'Signup failed. Please try again.', name: 'AuthError', status: 500 } as AuthError };
+    }
   }, []);
 
   const signInWithOAuth = useCallback(async (provider: Provider) => {
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/#/auth/callback`,
-      },
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/#/auth/callback`,
+        },
+      });
+
+      if (error) {
+        // Check for disabled provider error
+        if (error.message?.includes('provider is not enabled') ||
+            error.message?.includes('Unsupported provider') ||
+            error.code === 'validation_failed') {
+          const providerName = PROVIDER_NAMES[provider] || provider;
+          return {
+            error: {
+              message: `${providerName} login is not enabled. Please sign in with email or contact support.`,
+              name: 'AuthError',
+              status: 400,
+            } as AuthError,
+          };
+        }
+        return { error };
+      }
+
+      // signInWithOAuth returns a URL to redirect to — if we have no error but also no URL,
+      // something went wrong
+      if (!data?.url) {
+        return {
+          error: {
+            message: 'OAuth redirect URL not received. Please try again or use email login.',
+            name: 'AuthError',
+            status: 400,
+          } as AuthError,
+        };
+      }
+
+      // Redirect to OAuth provider
+      window.location.href = data.url;
+      return { error: null };
+    } catch (err: any) {
+      return {
+        error: {
+          message: err?.message || 'OAuth sign-in failed. Please try email login instead.',
+          name: 'AuthError',
+          status: 500,
+        } as AuthError,
+      };
+    }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -122,10 +193,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const sendPasswordReset = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/#/reset-password`,
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/#/reset-password`,
+      });
+      return { error };
+    } catch (err: any) {
+      return { error: { message: err?.message || 'Failed to send reset email.', name: 'AuthError', status: 500 } as AuthError };
+    }
   }, []);
 
   return (
