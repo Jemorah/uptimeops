@@ -56,35 +56,14 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: (id: string) => {
             if (id.includes("node_modules")) {
-              if (id.includes("react") || id.includes("react-dom") || id.includes("react-router-dom")) {
-                return "react-core";
-              }
-              if (id.includes("@radix-ui")) {
-                return "ui-framework";
-              }
-              if (id.includes("recharts")) {
-                return "charts";
-              }
-              if (id.includes("three") || id.includes("gsap") || id.includes("postprocessing")) {
-                return "3d";
-              }
-              if (id.includes("react-hook-form") || id.includes("zod") || id.includes("@hookform")) {
-                return "forms";
-              }
-              if (id.includes("@supabase")) {
-                return "supabase";
-              }
-              if (id.includes("@tanstack") || id.includes("zustand")) {
-                return "data";
-              }
-              if (
-                id.includes("class-variance-authority") ||
-                id.includes("tailwind-merge") ||
-                id.includes("lucide-react")
-              ) {
-                return "ui-utils";
-              }
-              return "vendor";
+              // Only split out specific large libraries.
+              // NO catch-all bucket — avoids circular chunk deps.
+              if (id.includes("react-dom")) return "react-dom";
+              if (id.includes("react-router-dom")) return "router";
+              if (id.includes("@supabase")) return "supabase";
+              if (id.includes("recharts")) return "charts";
+              if (id.includes("@radix-ui")) return "radix";
+              if (id.includes("lucide-react")) return "icons";
             }
           },
         },
