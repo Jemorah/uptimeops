@@ -1,44 +1,27 @@
 // ═══════════════════════════════════════════════════════════════
 // SUPABASE CLIENT — UptimeOps
-// Hardcoded project URL (public). Anon key from env var.
+// Public project URL and anon key (safe to expose in frontend).
+// Service role key must NEVER be exposed — server-side only.
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@supabase/supabase-js';
 
-// Project URL is public — safe to hardcode
-const DEFAULT_URL = 'https://npcopjsqgjvirfjnjemt.supabase.co';
+// These are PUBLIC credentials — safe to expose in browser code.
+// The anon key has restricted permissions (RLS policies control access).
+const SUPABASE_URL = 'https://npcopjsqgjvirfjnjemt.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wY29wanNxZ2p2aXJmam5qZW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDkzMjgsImV4cCI6MjA5Nzk4NTMyOH0.5tm3GfGwUVT__BdxVgzXvf7FByxUShKKfdujTkVfXh8';
 
-// Vite only exposes VITE_ prefixed env vars to browser.
-// Vercel Supabase integration sets SUPABASE_ANON_KEY (no prefix).
-// We check both — set whichever you have in Vercel.
-const url = import.meta.env.VITE_SUPABASE_URL || import.meta.env.SUPABASE_URL || DEFAULT_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
-
-if (!key) {
-  console.error(
-    '[UptimeOps] CRITICAL: Supabase anon key not found.\n' +
-    'Add ONE of these to your Vercel environment variables:\n' +
-    '  VITE_SUPABASE_ANON_KEY=eyJhbGci...  (if you added manually)\n' +
-    '  SUPABASE_ANON_KEY=eyJhbGci...        (if using Vercel-Supabase integration)\n' +
-    'Get the key from: Supabase Dashboard → Project Settings → API → anon public'
-  );
-}
-
-export const supabase = createClient(
-  url,
-  key || 'missing-key-placeholder',
-  {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
-      flowType: 'pkce',
-    },
-    realtime: {
-      params: { eventsPerSecond: 10 },
-    },
-  }
-);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+  },
+  realtime: {
+    params: { eventsPerSecond: 10 },
+  },
+});
 
 export type UserRole = 'public' | 'customer' | 'engineer' | 'coordinator' | 'admin';
 
