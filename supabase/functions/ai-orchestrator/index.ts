@@ -1,13 +1,14 @@
 // UptimeOps — AI Multi-Agent Orchestrator
 // Manages the 6-agent pipeline: Triage → Isolate → Repair → Validate → Deploy → Audit
+// Uses real AI via Anthropic/OpenAI/LangSmith fallback chain
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { logInfo, logError } from '../_shared/logger.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
+import { callAI } from '../_shared/ai.ts';
 
 const FUNCTION = 'ai-orchestrator';
-const AGENTS = ['triage', 'isolate', 'repair', 'validate', 'deploy', 'audit'] as const;
 const AUTO_DEPLOY_THRESHOLD = 90;
 
 interface PipelineContext {
@@ -18,28 +19,50 @@ interface PipelineContext {
   confidence: number;
 }
 
-async function callAgent(agent: string, context: PipelineContext): Promise<{ success: boolean; confidence: number; result: unknown }> {
-  logInfo(FUNCTION, `Calling agent: ${agent}`, { pipeline_id: context.pipeline_id });
+async function executeAgent(agent: string, context: PipelineContext): Promise<{ success: boolean; confidence: number; result: unknown }> {
+  logInfo(FUNCTION, `Executing agent: ${agent}`, { pipeline_id: context.pipeline_id });
 
-  // In production, this calls the ANTIGRAVITY SDK or internal agent functions
-  // For now, simulate with progressive confidence scoring
-  const baseConfidence = context.confidence || 70;
-  const randomBoost = Math.floor(Math.random() * 20);
-  const confidence = Math.min(98, baseConfidence + randomBoost);
+  const supabase = getSupabaseClient();
 
-  // Simulate occasional failures for testing escalation
-  const success = confidence >= 60 || agent === 'audit';
+  // Fetch incident details
+  const { data: incident } = await supabase.from('incidents')
+    .select('*, customers(email, website)').eq('id', context.incident_id).single();
 
-  return {
-    success,
-    confidence,
-    result: {
-      agent,
-      timestamp: new Date().toISOString(),
-      confidence,
-      recommendations: success ? [`${agent}_completed`] : [`${agent}_failed`],
-    },
+  const systemPrompt = `You are the ${agent.toUpperCase()} agent in an infrastructure incident response pipeline. Analyze the incident and provide structured JSON output with your findings. Be concise and technical.`;
+
+  const prompt = `Incident: "${incident?.title || 'Unknown'}"\nDescription: "${incident?.description || 'No description'}"\nWebsite: ${incident?.website_url || 'unknown'}\nPriority: ${incident?.priority || 'unknown'}\n\nAs the ${agent.toUpperCase()} agent, analyze this incident and provide:\n1. Your assessment\n2. Recommended actions\n3. Confidence score (0-100)\n4. Whether the step passed or failed\n\nRespond in JSON format with keys: assessment, actions (array), confidence (number), passed (boolean).`;
+
+  const aiResponse = await callAI(prompt, systemPrompt);
+
+  // Parse structured response
+  const parsed = aiResponse.content.match(/\{[\s\S]*\}/);
+  let result: Record<string, unknown> = {
+    agent,
+    provider: aiResponse.provider,
+    model: aiResponse.model,
+    timestamp: new Date().toISOString(),
   };
+  let confidence = 50;
+  let success = true;
+
+  if (parsed) {
+    try {
+      const json = JSON.parse(parsed[0]);
+      result = { ...result, ...json };
+      confidence = Math.min(100, Math.max(0, Number(json.confidence) || 50));
+      success = json.passed !== false;
+    } catch {
+      result.raw_response = aiResponse.content;
+    }
+  } else {
+    result.raw_response = aiResponse.content;
+    // Extract confidence from text
+    const confidenceMatch = aiResponse.content.match(/confidence[:\s]+(\d+)/i);
+    if (confidenceMatch) confidence = Math.min(100, Math.max(0, parseInt(confidenceMatch[1])));
+    success = !aiResponse.content.toLowerCase().includes('failed') && !aiResponse.content.toLowerCase().includes('cannot');
+  }
+
+  return { success, confidence, result };
 }
 
 async function escalateToHuman(supabase: any, context: PipelineContext, reason: string) {
@@ -80,7 +103,7 @@ serve(async (req) => {
 
     const supabase = getSupabaseClient(req);
 
-    // Special action: retry a failed step
+    // Retry a failed step
     if (action === 'retry') {
       const { data: pipeline } = await supabase.from('pipeline_states')
         .select('*').eq('incident_id', incident_id).single();
@@ -92,7 +115,7 @@ serve(async (req) => {
         confidence: pipeline.confidence || 0,
       };
 
-      const agentResult = await callAgent(pipeline.current_step, ctx);
+      const agentResult = await executeAgent(pipeline.current_step, ctx);
       await supabase.from('pipeline_states').update({
         confidence: agentResult.confidence,
         step_results: { ...ctx.step_results, [pipeline.current_step]: agentResult.result },
@@ -128,7 +151,7 @@ serve(async (req) => {
       confidence: pipeline.confidence || 0,
     };
 
-    const agentResult = await callAgent(pipeline.current_step, ctx);
+    const agentResult = await executeAgent(pipeline.current_step, ctx);
 
     if (!agentResult.success) {
       await escalateToHuman(supabase, ctx, `Agent ${pipeline.current_step} failed with confidence ${agentResult.confidence}%`);
@@ -137,8 +160,9 @@ serve(async (req) => {
 
     // Update pipeline with results
     const newStepResults = { ...ctx.step_results, [pipeline.current_step]: agentResult.result };
-    const currentIdx = AGENTS.indexOf(pipeline.current_step as typeof AGENTS[number]);
-    const nextAgent = AGENTS[currentIdx + 1];
+    const agents = ['triage', 'isolate', 'repair', 'validate', 'deploy', 'audit'];
+    const currentIdx = agents.indexOf(pipeline.current_step as typeof agents[number]);
+    const nextAgent = agents[currentIdx + 1];
 
     if (!nextAgent) {
       // All agents completed
@@ -184,6 +208,7 @@ serve(async (req) => {
       next_step: nextAgent,
       confidence: agentResult.confidence,
       awaiting_approval: needsApproval,
+      provider: (agentResult.result as Record<string, unknown>)?.provider || 'unknown',
     }), { headers: corsHeaders });
 
   } catch (err) {

@@ -1,69 +1,13 @@
 // UptimeOps — AI Triage Agent
-// Analyzes incident severity, categorizes root cause, assigns priority
+// Analyzes incident severity using real AI (Anthropic/OpenAI)
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { logInfo, logError } from '../_shared/logger.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
+import { callAI } from '../_shared/ai.ts';
 
 const FUNCTION = 'ai-triage';
-
-interface TriageResult {
-  priority: string;
-  category: string;
-  estimated_fix_minutes: number;
-  requires_human: boolean;
-  confidence: number;
-  analysis: string;
-}
-
-function analyzeIncident(title: string, description: string): TriageResult {
-  const text = (title + ' ' + description).toLowerCase();
-  let priority = 'P3_MEDIUM';
-  let category = 'general';
-  let requires_human = false;
-  let fixMinutes = 60;
-
-  // Priority heuristics
-  if (/down|offline|unreachable|502|503|crash|corrupt/.test(text)) {
-    priority = 'P1_CRITICAL';
-    category = 'outage';
-    fixMinutes = 30;
-    requires_human = true;
-  } else if (/slow|timeout|performance|memory|cpu|leak/.test(text)) {
-    priority = 'P2_HIGH';
-    category = 'performance';
-    fixMinutes = 45;
-  } else if (/ssl|certificate|expired/.test(text)) {
-    priority = 'P2_HIGH';
-    category = 'security';
-    fixMinutes = 15;
-  } else if (/config|nginx|docker|restart/.test(text)) {
-    priority = 'P3_MEDIUM';
-    category = 'configuration';
-    fixMinutes = 30;
-  }
-
-  // Data-driven confidence
-  const signals = [
-    /database|postgres|mysql|redis/.test(text),
-    /nginx|apache|load.?balancer/.test(text),
-    /docker|kubernetes|container/.test(text),
-    /ssl|cert|https/.test(text),
-    /memory|cpu|disk|resource/.test(text),
-  ].filter(Boolean).length;
-
-  const confidence = Math.min(95, 60 + signals * 7);
-
-  return {
-    priority,
-    category,
-    estimated_fix_minutes: fixMinutes,
-    requires_human: requires_human || confidence < 75,
-    confidence,
-    analysis: `Detected ${category} issue with ${signals} confidence signals. Estimated resolution: ${fixMinutes} minutes.`,
-  };
-}
 
 serve(async (req) => {
   const cors = handleCors(req);
@@ -83,12 +27,41 @@ serve(async (req) => {
       if (incident) { incidentTitle = incident.title; incidentDesc = incident.description; }
     }
 
-    const result = analyzeIncident(incidentTitle || '', incidentDesc || '');
+    const prompt = `Analyze this infrastructure incident and classify it:\n\nTitle: "${incidentTitle || 'Unknown'}"\nDescription: "${incidentDesc || 'No description'}"\n\nProvide JSON with:\n- priority: "P1_CRITICAL" | "P2_HIGH" | "P3_MEDIUM" | "P4_LOW"\n- category: "outage" | "performance" | "security" | "configuration" | "general"\n- estimated_fix_minutes: number\n- requires_human: boolean (true if needs engineer)\n- confidence: number (0-100)\n- analysis: brief explanation`;
+
+    const aiResponse = await callAI(prompt, 'You are a DevOps triage specialist. Classify incidents by severity and root cause. Always respond with valid JSON.');
+
+    // Parse AI response
+    const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
+    let result: Record<string, unknown> = {
+      priority: 'P3_MEDIUM',
+      category: 'general',
+      estimated_fix_minutes: 60,
+      requires_human: false,
+      confidence: 50,
+      analysis: 'Default classification — AI provider may be offline.',
+      provider: aiResponse.provider,
+      model: aiResponse.model,
+    };
+
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        result = { ...result, ...parsed };
+      } catch {
+        result.raw_response = aiResponse.content;
+      }
+    } else {
+      result.raw_response = aiResponse.content;
+    }
+
+    const confidence = Math.min(100, Math.max(0, Number(result.confidence) || 50));
+    const priority = String(result.priority || 'P3_MEDIUM');
 
     // Update incident
     await supabase.from('incidents').update({
-      priority: result.priority as any,
-      ai_confidence: result.confidence,
+      priority: priority as any,
+      ai_confidence: confidence,
       status: 'isolate',
     }).eq('id', incident_id);
 
@@ -99,7 +72,8 @@ serve(async (req) => {
       new_values: result,
     });
 
-    logInfo(FUNCTION, 'Triage complete', { incident_id, priority: result.priority, confidence: result.confidence });
+    logInfo(FUNCTION, 'Triage complete', { incident_id, priority, confidence, provider: aiResponse.provider });
+
     return new Response(JSON.stringify(result), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
     logError(FUNCTION, 'Triage failed', err);

@@ -1,64 +1,13 @@
 // UptimeOps — AI Repair Agent
-// Diagnoses root cause and generates fix commands
+// Diagnoses root cause and generates fix commands using real AI
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { logInfo, logError } from '../_shared/logger.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
+import { callAI } from '../_shared/ai.ts';
 
 const FUNCTION = 'ai-repair';
-
-interface RepairCommand {
-  command: string;
-  description: string;
-  expected_output: string;
-  rollback_command: string;
-  risk_level: 'low' | 'medium' | 'high';
-}
-
-function generateRepairPlan(title: string, description: string): { commands: RepairCommand[]; confidence: number; summary: string } {
-  const text = (title + ' ' + description).toLowerCase();
-  const commands: RepairCommand[] = [];
-  let confidence = 70;
-
-  if (/database|postgres|mysql|connection|pool/.test(text)) {
-    commands.push(
-      { command: 'psql -c "SELECT count(*) FROM pg_stat_activity;"', description: 'Check active connections', expected_output: 'count < max_connections', rollback_command: '', risk_level: 'low' },
-      { command: 'psql -c "SHOW max_connections;"', description: 'Check max connections limit', expected_output: 'max_connections value', rollback_command: '', risk_level: 'low' },
-      { command: 'psql -c "SELECT * FROM pg_stat_activity WHERE state = \'idle\' AND now() - query_start > interval \'10 min\';"', description: 'Find idle connections', expected_output: 'List of idle connections', rollback_command: '', risk_level: 'low' },
-      { command: 'psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = \'idle\' AND now() - query_start > interval \'10 min\';"', description: 'Terminate idle connections', expected_output: ' backends terminated', rollback_command: 'Restart PostgreSQL to restore original state', risk_level: 'medium' },
-    );
-    confidence = 85;
-  } else if (/nginx|502|503|upstream/.test(text)) {
-    commands.push(
-      { command: 'nginx -t', description: 'Test nginx configuration', expected_output: 'syntax is ok', rollback_command: 'cp /etc/nginx/nginx.conf.bak /etc/nginx/nginx.conf && nginx -s reload', risk_level: 'low' },
-      { command: 'cat /var/log/nginx/error.log | tail -20', description: 'Check nginx errors', expected_output: 'Error details', rollback_command: '', risk_level: 'low' },
-      { command: 'systemctl restart nginx', description: 'Restart nginx', expected_output: 'nginx restarted', rollback_command: 'systemctl stop nginx', risk_level: 'medium' },
-    );
-    confidence = 88;
-  } else if (/ssl|certificate|expired/.test(text)) {
-    commands.push(
-      { command: 'openssl x509 -in /etc/ssl/cert.pem -noout -dates', description: 'Check cert expiry', expected_output: 'notAfter date', rollback_command: '', risk_level: 'low' },
-      { command: 'certbot renew --dry-run', description: 'Test cert renewal', expected_output: 'success', rollback_command: '', risk_level: 'low' },
-      { command: 'certbot renew && systemctl reload nginx', description: 'Renew certificate', expected_output: 'Congratulations', rollback_command: 'Restore from /etc/letsencrypt/backup', risk_level: 'medium' },
-    );
-    confidence = 92;
-  } else if (/redis|memory|cache/.test(text)) {
-    commands.push(
-      { command: 'redis-cli INFO memory', description: 'Check Redis memory', expected_output: 'used_memory_human', rollback_command: '', risk_level: 'low' },
-      { command: 'redis-cli --eval evict_old_keys.lua', description: 'Evict old cache keys', expected_output: 'Keys evicted', rollback_command: '', risk_level: 'medium' },
-    );
-    confidence = 80;
-  } else {
-    commands.push(
-      { command: 'uptime && free -h && df -h', description: 'System health check', expected_output: 'System stats', rollback_command: '', risk_level: 'low' },
-      { command: 'docker ps --format "table {{.Names}}\t{{.Status}}"', description: 'Check container status', expected_output: 'Container list', rollback_command: '', risk_level: 'low' },
-    );
-    confidence = 65;
-  }
-
-  return { commands, confidence, summary: `Generated ${commands.length} repair commands for ${text.slice(0, 50)}...` };
-}
 
 serve(async (req) => {
   const cors = handleCors(req);
@@ -69,33 +18,63 @@ serve(async (req) => {
     if (!incident_id) return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
 
     const supabase = getSupabaseClient(req);
-    const { data: incident } = await supabase.from('incidents').select('title, description').eq('id', incident_id).single();
+    const { data: incident } = await supabase.from('incidents').select('title, description, website_url').eq('id', incident_id).single();
     if (!incident) return new Response(JSON.stringify({ error: 'Incident not found' }), { status: 404, headers: corsHeaders });
 
-    const plan = generateRepairPlan(incident.title || '', incident.description || '');
+    const prompt = `You are diagnosing an infrastructure incident. Generate repair commands.\n\nTitle: "${incident.title || ''}"\nDescription: "${incident.description || ''}"\nWebsite: ${incident.website_url || 'unknown'}\n\nProvide JSON with:\n- commands: array of objects { command, description, expected_output, rollback_command, risk_level: "low"|"medium"|"high" }\n- confidence: number (0-100)\n- summary: brief explanation of the fix plan\n- root_cause: likely cause of the issue`;
+
+    const aiResponse = await callAI(prompt, 'You are a senior DevOps engineer. Generate precise Linux CLI commands to fix infrastructure issues. Always respond with valid JSON.');
+
+    // Parse AI response
+    const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
+    let plan: Record<string, unknown> = {
+      commands: [],
+      confidence: 50,
+      summary: 'AI-generated repair plan',
+      root_cause: 'Unknown — see raw response',
+      provider: aiResponse.provider,
+      model: aiResponse.model,
+    };
+
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        plan = { ...plan, ...parsed };
+      } catch {
+        plan.raw_response = aiResponse.content;
+      }
+    } else {
+      plan.raw_response = aiResponse.content;
+    }
+
+    const commands = Array.isArray(plan.commands) ? plan.commands : [];
+    const confidence = Math.min(100, Math.max(0, Number(plan.confidence) || 50));
 
     // Queue commands in VM
-    if (vm_session_id) {
-      for (const cmd of plan.commands) {
-        await supabase.from('vm_commands').insert({
-          vm_session_id,
-          command: cmd.command,
-          status: 'queued',
-        });
+    if (vm_session_id && commands.length > 0) {
+      for (const cmd of commands) {
+        const cmdStr = typeof cmd === 'string' ? cmd : cmd.command;
+        if (cmdStr) {
+          await supabase.from('vm_commands').insert({
+            vm_session_id,
+            command: cmdStr,
+            status: 'queued',
+          });
+        }
       }
     }
 
     // Update pipeline
     await supabase.from('pipeline_states').update({
       current_step: 'validate',
-      confidence: plan.confidence,
+      confidence,
     }).eq('incident_id', incident_id);
 
-    await supabase.from('incidents').update({ status: 'validate', ai_confidence: plan.confidence }).eq('id', incident_id);
+    await supabase.from('incidents').update({ status: 'validate', ai_confidence: confidence }).eq('id', incident_id);
 
-    logInfo(FUNCTION, 'Repair plan generated', { incident_id, commands: plan.commands.length, confidence: plan.confidence });
+    logInfo(FUNCTION, 'Repair plan generated', { incident_id, commands: commands.length, confidence, provider: aiResponse.provider });
 
-    return new Response(JSON.stringify(plan), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ ...plan, commands_queued: commands.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
     logError(FUNCTION, 'Repair failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
