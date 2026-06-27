@@ -1,200 +1,164 @@
-import { useState } from 'react';
-import {
-  Activity, AlertTriangle, ArrowRight, CheckCircle,
-  Clock, Globe, Shield, TrendingUp, Zap
-} from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Progress } from '@/components/ui/progress';
+// ═══════════════════════════════════════════════════════════════
+// CUSTOMER DASHBOARD — Overview of incidents, subscription, status
+// ═══════════════════════════════════════════════════════════════
 
-interface SiteMetric {
-  url: string;
-  status: 'up' | 'down' | 'degraded';
-  uptime: string;
-  responseTime: string;
-  lastCheck: string;
-}
-
-const mockSites: SiteMetric[] = [
-  { url: 'acme-corp.com', status: 'up', uptime: '99.99%', responseTime: '42ms', lastCheck: '2s ago' },
-  { url: 'shop.acme-corp.com', status: 'up', uptime: '99.97%', responseTime: '68ms', lastCheck: '3s ago' },
-  { url: 'api.acme-corp.com', status: 'up', uptime: '100.00%', responseTime: '12ms', lastCheck: '1s ago' },
-];
-
-const mockIncidents = [
-  { id: 'INC-0641', title: 'Database connection timeout', status: 'resolved', severity: 'high', time: '2h ago' },
-  { id: 'INC-0639', title: 'CSS asset 404 on checkout page', status: 'resolved', severity: 'low', time: '1d ago' },
-  { id: 'INC-0635', title: 'SSL cert renewal', status: 'resolved', severity: 'medium', time: '3d ago' },
-];
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase/client';
+import { AlertTriangle, CheckCircle, Clock, Shield, Zap, CreditCard, ArrowRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export function CustomerDashboard() {
-  const [subscription] = useState({
-    tier: 'Pro',
-    status: 'active',
-    sitesUsed: 3,
-    sitesLimit: 10,
-    incidentsUsed: 8,
-    incidentsLimit: 25,
-    expiresAt: '2026-12-31',
-  });
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [stats, setStats] = useState({ open: 0, resolved: 0, total: 0 });
+  const [subscription, setSubscription] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const statusConfig = {
-    up: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10', label: 'Up' },
-    down: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', label: 'Down' },
-    degraded: { icon: Clock, color: 'text-yellow-500', bg: 'bg-yellow-500/10', label: 'Degraded' },
-  };
+  useEffect(() => {
+    async function load() {
+      if (!user) return;
+
+      // Find customer record
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!customer) { setLoading(false); return; }
+
+      // Load incidents
+      const { data: incs } = await supabase
+        .from('incidents')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      setIncidents(incs || []);
+      setStats({
+        open: (incs || []).filter(i => !['resolved', 'closed'].includes(i.status)).length,
+        resolved: (incs || []).filter(i => ['resolved', 'closed'].includes(i.status)).length,
+        total: (incs || []).length,
+      });
+
+      // Load subscription
+      const { data: sub } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setSubscription(sub);
+      setLoading(false);
+    }
+
+    load();
+
+    // Realtime subscription
+    const channel = supabase
+      .channel('customer-incidents')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => load())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-white/40 text-sm animate-pulse">Loading dashboard...</div>
+      </div>
+    );
+  }
+
+  const planName = subscription?.plan || 'Guardian';
+  const planPrice = subscription ? `$${(subscription.price_cents / 100).toFixed(0)}/mo` : 'Free';
 
   return (
     <div className="space-y-6">
-      {/* Welcome */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-black tracking-tight">DASHBOARD</h2>
-          <p className="text-sm text-white/40 mt-1">Overview of your protected sites and account</p>
+          <h1 className="text-2xl font-black">Dashboard</h1>
+          <p className="text-sm text-white/40 mt-1">Welcome back, {user?.email}</p>
         </div>
-        <Link
-          to="/emergency"
-          className="px-4 py-2 bg-magenta/10 border border-magenta/30 text-magenta text-sm font-medium hover:bg-magenta/20 transition-colors flex items-center gap-2 self-start"
-        >
-          <AlertTriangle className="w-4 h-4" />
-          Report Emergency
-        </Link>
+        <Button onClick={() => navigate('/customer/incidents')} className="bg-[#a3e635] text-black hover:bg-[#a3e635]/90">
+          <AlertTriangle className="w-4 h-4 mr-2" /> Report Incident
+        </Button>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Sites Up', value: '3/3', icon: Globe, color: 'text-green-500' },
-          { label: 'Incidents (30d)', value: '8', icon: AlertTriangle, color: 'text-yellow-500' },
-          { label: 'Avg Response', value: '41ms', icon: Activity, color: 'text-lime' },
-          { label: 'Uptime (30d)', value: '99.98%', icon: TrendingUp, color: 'text-cyan' },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-surface border border-white/5 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <stat.icon className={`w-4 h-4 ${stat.color}`} />
-              <span className="text-xs text-white/40 uppercase tracking-wider">{stat.label}</span>
-            </div>
-            <div className="text-2xl font-black font-mono">{stat.value}</div>
+          { label: 'Open Incidents', value: stats.open, icon: AlertTriangle, color: 'text-amber-400' },
+          { label: 'Resolved', value: stats.resolved, icon: CheckCircle, color: 'text-[#a3e635]' },
+          { label: 'Total', value: stats.total, icon: Clock, color: 'text-[#22d3ee]' },
+        ].map(s => (
+          <div key={s.label} className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
+            <s.icon className={`w-5 h-5 ${s.color} mb-2`} />
+            <div className="text-2xl font-black">{s.value}</div>
+            <div className="text-xs text-white/40">{s.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Sites + Subscription Row */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Monitored Sites */}
-        <div className="lg:col-span-2 bg-surface border border-white/5">
-          <div className="p-4 border-b border-white/5 flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-              <Globe className="w-4 h-4 text-lime" />
-              Monitored Sites
-            </h3>
-            <span className="text-xs font-mono text-white/40">{subscription.sitesUsed} / {subscription.sitesLimit}</span>
-          </div>
-          <div className="divide-y divide-white/5">
-            {mockSites.map((site) => {
-              const config = statusConfig[site.status];
-              return (
-                <div key={site.url} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-                  <div className="flex items-center gap-3">
-                    <config.icon className={`w-4 h-4 ${config.color}`} />
-                    <div>
-                      <div className="text-sm font-medium">{site.url}</div>
-                      <div className="text-xs text-white/40 font-mono">Last check: {site.lastCheck}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <div className="text-xs text-white/40">Uptime</div>
-                      <div className="text-sm font-mono font-bold">{site.uptime}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-white/40">Response</div>
-                      <div className="text-sm font-mono">{site.responseTime}</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Subscription Card */}
-        <div className="bg-surface border border-white/5">
-          <div className="p-4 border-b border-white/5">
-            <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-              <Zap className="w-4 h-4 text-lime" />
-              Subscription
-            </h3>
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-white/60">Plan</span>
-              <span className="text-sm font-bold text-lime">{subscription.tier}</span>
+      {/* Subscription */}
+      <div className="border border-white/10 rounded-xl p-5 bg-white/[0.02]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Shield className="w-5 h-5 text-[#a3e635]" />
+            <div>
+              <div className="text-sm font-bold">{planName} Plan</div>
+              <div className="text-xs text-white/40">{planPrice} — {subscription?.status || 'active'}</div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-white/60">Status</span>
-              <span className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-sm font-medium capitalize">{subscription.status}</span>
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-white/60">Renews</span>
-              <span className="text-sm font-mono">{subscription.expiresAt}</span>
-            </div>
-
-            <div className="pt-2 space-y-3">
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-white/40">Sites</span>
-                  <span className="font-mono">{subscription.sitesUsed}/{subscription.sitesLimit}</span>
-                </div>
-                <Progress value={(subscription.sitesUsed / subscription.sitesLimit) * 100} className="h-1.5" />
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-white/40">Incidents</span>
-                  <span className="font-mono">{subscription.incidentsUsed}/{subscription.incidentsLimit}</span>
-                </div>
-                <Progress value={(subscription.incidentsUsed / subscription.incidentsLimit) * 100} className="h-1.5" />
-              </div>
-            </div>
-
-            <Link
-              to="/customer/billing"
-              className="flex items-center justify-center gap-2 w-full py-2 border border-white/10 text-sm text-white/60 hover:border-lime hover:text-lime transition-colors"
-            >
-              Manage Subscription
-              <ArrowRight className="w-4 h-4" />
-            </Link>
           </div>
+          <Button variant="outline" size="sm" onClick={() => navigate('/customer/billing')} className="border-white/10 hover:bg-white/5">
+            Manage <ArrowRight className="w-3 h-3 ml-1" />
+          </Button>
         </div>
       </div>
 
       {/* Recent Incidents */}
-      <div className="bg-surface border border-white/5">
-        <div className="p-4 border-b border-white/5 flex items-center justify-between">
-          <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-            <Shield className="w-4 h-4 text-cyan" />
-            Recent Incidents
-          </h3>
-          <Link to="/customer/incidents" className="text-xs text-lime hover:underline flex items-center gap-1">
-            View All <ArrowRight className="w-3 h-3" />
-          </Link>
+      <div className="border border-white/10 rounded-xl bg-white/[0.02]">
+        <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+          <h2 className="text-sm font-bold">Recent Incidents</h2>
+          <button onClick={() => navigate('/customer/incidents')} className="text-xs text-[#a3e635] hover:underline">
+            View All
+          </button>
         </div>
-        <div className="divide-y divide-white/5">
-          {mockIncidents.map((inc) => (
-            <div key={inc.id} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="w-4 h-4 text-green-500" />
-                <div>
-                  <div className="text-sm font-medium">{inc.title}</div>
-                  <div className="text-xs text-white/40 font-mono">{inc.id} &middot; {inc.severity}</div>
+        {incidents.length === 0 ? (
+          <div className="p-8 text-center text-sm text-white/30">
+            <Zap className="w-8 h-8 mx-auto mb-2 text-white/10" />
+            No incidents yet. That's great news!
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {incidents.map(inc => (
+              <button
+                key={inc.id}
+                onClick={() => navigate('/customer/incidents')}
+                className="w-full px-5 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
+              >
+                <div className={`w-2 h-2 rounded-full shrink-0 ${
+                  inc.priority === 'P1_CRITICAL' ? 'bg-red-500' :
+                  inc.priority === 'P2_HIGH' ? 'bg-amber-400' :
+                  'bg-[#22d3ee]'
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm truncate">{inc.title}</div>
+                  <div className="text-xs text-white/40">{inc.status} — {inc.website_url}</div>
                 </div>
-              </div>
-              <span className="text-xs text-white/40 font-mono">{inc.time}</span>
-            </div>
-          ))}
-        </div>
+                <ArrowRight className="w-4 h-4 text-white/20 shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

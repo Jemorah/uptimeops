@@ -1,204 +1,87 @@
 // ═══════════════════════════════════════════════════════════════
-// SUPABASE CLIENT — Enhanced with Realtime
-// Browser client: Auth + Database + Realtime subscriptions
+// SUPABASE CLIENT — UptimeOps
+// Single source of truth for all Supabase interactions
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from './database.types';
 
-// Support both VITE_ prefixed (local dev) and non-prefixed (Vercel integration)
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY;
+// Read env vars — VITE_ prefix required for Vite to expose to browser
+const url = import.meta.env.VITE_SUPABASE_URL;
+const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Graceful fallback when env vars are missing (preview/demo mode)
-function createMockClient() {
-  const warn = (method: string) => () => {
-    console.warn(`[Supabase] ${method}() called but VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY are not set. Connect your Supabase project to enable backend features.`);
-    return Promise.resolve({ data: null, error: null });
-  };
-  return {
+if (!url || !key) {
+  console.error(
+    '[UptimeOps] CRITICAL: VITE_SUPABASE_URL and/or VITE_SUPABASE_ANON_KEY are not set.\n' +
+    'The app cannot connect to Supabase. Set these in your Vercel environment variables.'
+  );
+}
+
+export const supabase = createClient(
+  url || '',
+  key || '',
+  {
     auth: {
-      getUser: warn('auth.getUser'),
-      getSession: warn('auth.getSession'),
-      signOut: warn('auth.signOut'),
-      signInWithPassword: warn('auth.signInWithPassword'),
-      signInWithOtp: warn('auth.signInWithOtp'),
-      signUp: warn('auth.signUp'),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
     },
-    from: () => ({ select: () => ({ eq: () => ({ single: warn('from.select') }), order: () => ({ limit: () => ({}) }), limit: () => ({}) }), insert: warn('from.insert'), update: warn('from.update'), delete: warn('from.delete') }),
-    channel: () => ({ on: () => ({ subscribe: () => ({}) }) }),
-    removeChannel: () => {},
-    rpc: warn('rpc'),
-  } as unknown as ReturnType<typeof createClient<Database>>;
-}
-
-export const supabase = (!supabaseUrl || !supabaseAnonKey)
-  ? createMockClient()
-  : createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    flowType: 'pkce',
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
+    realtime: {
+      params: { eventsPerSecond: 10 },
     },
-  },
-  global: {
-    headers: {
-      'x-application-name': 'uptimeops',
+    global: {
+      headers: { 'x-application-name': 'uptimeops' },
     },
-  },
-});
-
-// ── Typed helpers ──
-
-export type Tables<T extends keyof Database['public']['Tables']> =
-  Database['public']['Tables'][T]['Row'];
-export type Enums<T extends keyof Database['public']['Enums']> =
-  Database['public']['Enums'][T];
-
-// Convenience type exports for common tables
-export type CredentialsVault = Tables<'credentials_vault'>;
-
-// ── User role type ──
-export type UserRole = 'public' | 'customer' | 'engineer' | 'coordinator' | 'admin';
-
-export interface Customer {
-  id: string;
-  email: string;
-  full_name?: string | null;
-  company_name?: string | null;
-  website?: string | null;
-  phone?: string | null;
-  plan?: string;
-  status?: string;
-  mrr?: number;
-  subscription_status?: string;
-  subscription_tier?: string;
-  stripe_customer_id?: string | null;
-  created_at?: string;
-  updated_at?: string;
-}
-
-// ── Realtime subscription helpers ──
-
-interface RealtimeConfig {
-  table: string;
-  event?: 'INSERT' | 'UPDATE' | 'DELETE' | '*';
-  filter?: string;
-  callback: (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => void;
-}
-
-/**
- * Subscribe to real-time database changes
- * Returns cleanup function to unsubscribe
- */
-export function subscribeToTable(config: RealtimeConfig): () => void {
-  const channel = supabase
-    .channel(`db-changes-${config.table}-${Date.now()}`)
-    .on(
-      'postgres_changes' as never,
-      {
-        event: config.event || '*',
-        schema: 'public',
-        table: config.table,
-        filter: config.filter,
-      },
-      (payload) => {
-        config.callback({
-          eventType: payload.eventType,
-          new: payload.new as Record<string, unknown>,
-          old: payload.old as Record<string, unknown>,
-        });
-      }
-    )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        // console.log(`[Realtime] Subscribed to ${config.table}`);
-      }
-      if (status === 'CHANNEL_ERROR') {
-        console.error(`[Realtime] Error on ${config.table}`);
-      }
-    });
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}
-
-/**
- * Subscribe to a specific incident's updates
- */
-export function subscribeToIncident(
-  incidentId: string,
-  callback: (payload: { eventType: string; new: Record<string, unknown> }) => void
-): () => void {
-  return subscribeToTable({
-    table: 'incidents',
-    event: 'UPDATE',
-    filter: `id=eq.${incidentId}`,
-    callback,
-  });
-}
-
-/**
- * Subscribe to the incidents queue (for engineer dashboard)
- */
-export function subscribeToIncidentQueue(
-  callback: (payload: { eventType: string; new: Record<string, unknown> }) => void
-): () => void {
-  return subscribeToTable({
-    table: 'incidents',
-    event: '*',
-    callback,
-  });
-}
-
-/**
- * Subscribe to audit logs
- */
-export function subscribeToAuditLogs(
-  callback: (payload: { eventType: string; new: Record<string, unknown> }) => void
-): () => void {
-  return subscribeToTable({
-    table: 'audit_logs',
-    event: 'INSERT',
-    callback,
-  });
-}
+  }
+);
 
 // ── Auth helpers ──
-
-export async function getCurrentUser() {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return null;
-  return user;
+export async function getSession() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) { console.error('[Auth] getSession error:', error.message); return null; }
+  return data.session;
 }
 
-export async function getSession() {
-  const { data: { session }, error } = await supabase.auth.getSession();
-  if (error) return null;
-  return session;
+export async function getUser() {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) { console.error('[Auth] getUser error:', error.message); return null; }
+  return data.user;
 }
 
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
+  if (error) console.error('[Auth] signOut error:', error.message);
   return { error };
 }
 
-// ── RLS-safe queries ──
+// ── Role detection ──
+export type UserRole = 'public' | 'customer' | 'engineer' | 'coordinator' | 'admin';
 
-export async function getUserRole(userId: string): Promise<UserRole | null> {
+export async function getUserRole(userId: string): Promise<UserRole> {
   const { data, error } = await supabase
     .from('user_roles')
     .select('role')
     .eq('user_id', userId)
-    .single() as { data: { role: string } | null; error: Error | null };
+    .single();
 
-  if (error || !data) return null;
-  return data.role as UserRole;
+  if (error || !data) return 'customer'; // default for authenticated users
+  return (data.role as UserRole) || 'customer';
+}
+
+// ── Realtime helpers ──
+export function subscribeToTable(
+  table: string,
+  callback: (payload: any) => void,
+  filter?: string
+): () => void {
+  const channel = supabase
+    .channel(`${table}-changes-${Date.now()}`)
+    .on(
+      'postgres_changes' as never,
+      { event: '*', schema: 'public', table, filter },
+      callback
+    )
+    .subscribe();
+
+  return () => { supabase.removeChannel(channel); };
 }
