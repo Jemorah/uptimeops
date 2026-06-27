@@ -42,15 +42,9 @@ file_size_limit = "500MiB"
 
 [auth]
 enabled = true
-port = 54325
 site_url = "https://uptimeops.vercel.app"
 additional_redirect_urls = ["https://uptimeops.vercel.app/**"]
-jwt_expiry = 3600
-enable_refresh_token_rotation = true
 enable_signup = true
-enable_anonymous_sign_ins = false
 
 [edge_runtime]
 enabled = true
-inspector_port = 8083
-verify_jwt = true
