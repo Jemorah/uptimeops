@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase/client';
 import {
-  AlertTriangle, CheckCircle, Clock, Users, Zap,
+  AlertTriangle, CheckCircle, Users, Zap,
   TrendingUp, DollarSign, ArrowRight, Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';

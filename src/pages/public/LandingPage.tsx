@@ -6,9 +6,9 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
-  Shield, Zap, Clock, Lock, Bot, Users, Eye,
+  Zap, Lock, Bot, Eye,
   ChevronRight, Star, CheckCircle, ArrowRight,
-  Server, Activity, Globe
+  Server,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 

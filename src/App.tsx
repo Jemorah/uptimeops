@@ -76,7 +76,7 @@ function PublicWrapper({ children }: { children: React.ReactNode }) {
 function CustomerRoute({ children }: { children: React.ReactNode }) {
   return (
     <ProtectedRoute allowedRoles={[...CUSTOMER_ROLES]}>
-      <PortalLayout allowedRoles={[...CUSTOMER_ROLES]}>
+      <PortalLayout>
         <Suspense fallback={<LoadingScreen message="Loading dashboard" variant="inline" />}>
           {children}
         </Suspense>
@@ -88,7 +88,7 @@ function CustomerRoute({ children }: { children: React.ReactNode }) {
 function EngineerRoute({ children }: { children: React.ReactNode }) {
   return (
     <ProtectedRoute allowedRoles={[...ENGINEER_ROLES]}>
-      <PortalLayout allowedRoles={[...ENGINEER_ROLES]}>
+      <PortalLayout>
         <Suspense fallback={<LoadingScreen message="Loading engineer portal" variant="inline" />}>
           {children}
         </Suspense>
@@ -100,7 +100,7 @@ function EngineerRoute({ children }: { children: React.ReactNode }) {
 function HQRoute({ children }: { children: React.ReactNode }) {
   return (
     <ProtectedRoute allowedRoles={[...HQ_ROLES]}>
-      <PortalLayout allowedRoles={[...HQ_ROLES]}>
+      <PortalLayout>
         <Suspense fallback={<LoadingScreen message="Loading HQ Center" variant="inline" />}>
           {children}
         </Suspense>

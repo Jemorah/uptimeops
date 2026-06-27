@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
-import { AlertTriangle, CheckCircle, Clock, Shield, Zap, CreditCard, ArrowRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Shield, Zap, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function CustomerDashboard() {

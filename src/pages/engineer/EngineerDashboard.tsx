@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase/client';
-import { AlertTriangle, CheckCircle, Clock, Zap, ArrowRight, Radio, User } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, ArrowRight, Radio, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function EngineerDashboard() {

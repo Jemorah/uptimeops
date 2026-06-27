@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth, getRoleRedirectPath } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

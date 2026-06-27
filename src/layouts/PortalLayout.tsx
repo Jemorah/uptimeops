@@ -5,11 +5,11 @@
 
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import type { UserRole } from '@/lib/supabase/client';
+
 import {
   LayoutDashboard, AlertTriangle, CreditCard, Shield,
-  MessageSquare, Settings, LogOut, Zap, Wrench, Terminal,
-  FileCode, Users, BarChart3, CheckSquare, ClipboardList,
+  MessageSquare, Settings, LogOut, Zap, Terminal,
+  Users, BarChart3, CheckSquare, ClipboardList,
   Radio, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useState } from 'react';

@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════
 // STRIPE CLIENT — UptimeOps
-// Initializes Stripe with publishable key from env
+// Lazy-loads Stripe.js to avoid build dependency issues
 // ═══════════════════════════════════════════════════════════════
 
-import { loadStripe, Stripe } from '@stripe/stripe-js';
 import { STRIPE_KEY } from './constants';
 
-let stripePromise: Promise<Stripe | null> | null = null;
+let stripePromise: Promise<any> | null = null;
 
-export function getStripe(): Promise<Stripe | null> {
+export async function getStripe(): Promise<any> {
   if (!stripePromise) {
+    // Dynamic import avoids build-time dependency on @stripe/stripe-js
+    const { loadStripe } = await import('@stripe/stripe-js');
     stripePromise = loadStripe(STRIPE_KEY);
   }
   return stripePromise;
@@ -26,8 +27,8 @@ export async function createCheckoutSession(planType: 'guardian' | 'sentinel' | 
   const { error } = await stripe.redirectToCheckout({
     lineItems: [{ price: productId, quantity: 1 }],
     mode: 'subscription',
-    successUrl: `${window.location.origin}/customer?success=true`,
-    cancelUrl: `${window.location.origin}/pricing?canceled=true`,
+    successUrl: `${window.location.origin}/#/customer?success=true`,
+    cancelUrl: `${window.location.origin}/#/pricing?canceled=true`,
   });
 
   if (error) throw error;
@@ -44,8 +45,8 @@ export async function createOneTimeCheckout(fixType: 'rapid' | 'critical' | 'cat
   const { error } = await stripe.redirectToCheckout({
     lineItems: [{ price: productId, quantity: 1 }],
     mode: 'payment',
-    successUrl: `${window.location.origin}/emergency?success=true`,
-    cancelUrl: `${window.location.origin}/emergency?canceled=true`,
+    successUrl: `${window.location.origin}/#/emergency?success=true`,
+    cancelUrl: `${window.location.origin}/#/emergency?canceled=true`,
   });
 
   if (error) throw error;
