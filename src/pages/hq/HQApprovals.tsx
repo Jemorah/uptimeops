@@ -127,9 +127,9 @@ export function HQApprovals() {
                   <SeverityBadge severity={approval.severity} />
                   <StatusBadge status="pending_assignment" />
                   <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 border ${
-                    approval.confidence >= 90 ? 'bg-green/10 text-green-400 border-green/20' :
-                    approval.confidence >= 75 ? 'bg-yellow/10 text-yellow-400 border-yellow/20' :
-                    'bg-red/10 text-red-400 border-red/20'
+                    approval.confidence >= 90 ? 'bg-lime/10 text-lime border-lime/20' :
+                    approval.confidence >= 75 ? 'bg-white/10 text-white/60 border-white/20' :
+                    'bg-white/5 text-white/40 border-white/10'
                   }`}>
                     {approval.confidence}%
                   </span>
@@ -175,7 +175,7 @@ export function HQApprovals() {
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleReject(approval.id); }}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red/10 border border-red/20 text-red-400 text-xs font-bold hover:bg-red/20 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white/60 text-xs font-bold hover:bg-white/10 transition-colors"
                   >
                     <ThumbsDown className="w-3.5 h-3.5" />
                     REJECT

@@ -48,7 +48,7 @@ const LOOPS: LoopSection[] = [
     id: 'lead-capture',
     title: 'Lead Capture Loop',
     icon: Globe,
-    iconColor: 'text-cyan',
+    iconColor: 'text-white/60',
     overallStatus: 'passed',
     items: [
       { id: 'lc-1', label: 'Landing page form → Supabase customers table', status: 'passed', lastVerified: '2024-06-25T14:30:00Z', detail: '24 leads captured today, all written to customers table' },
@@ -61,7 +61,7 @@ const LOOPS: LoopSection[] = [
     id: 'payment',
     title: 'Payment Loop',
     icon: CreditCard,
-    iconColor: 'text-green-400',
+    iconColor: 'text-lime',
     overallStatus: 'passed',
     items: [
       { id: 'pay-1', label: 'Stripe Checkout → PaymentIntent → success triggers AI', status: 'passed', lastVerified: '2024-06-25T14:47:15Z', detail: '47 payments processed today, all triggered AI pipeline' },
@@ -74,7 +74,7 @@ const LOOPS: LoopSection[] = [
     id: 'credential',
     title: 'Credential Loop',
     icon: Lock,
-    iconColor: 'text-purple-400',
+    iconColor: 'text-white/50',
     overallStatus: 'passed',
     items: [
       { id: 'cr-1', label: 'Customer submits → browser encrypts → encrypted payload to Supabase', status: 'passed', lastVerified: '2024-06-25T14:47:00Z', detail: 'AES-256-GCM verified — no plaintext in transit or storage' },
@@ -101,7 +101,7 @@ const LOOPS: LoopSection[] = [
     id: 'human-escalation',
     title: 'Human Escalation Loop',
     icon: Users,
-    iconColor: 'text-orange-400',
+    iconColor: 'text-white/45',
     overallStatus: 'passed',
     items: [
       { id: 'he-1', label: 'Auto-trigger conditions defined and enforced', status: 'passed', lastVerified: '2024-06-25T14:00:00Z', detail: 'Triggers: P1, smoke fail, confidence <90%, security' },
@@ -114,7 +114,7 @@ const LOOPS: LoopSection[] = [
     id: 'communication',
     title: 'Communication Loop',
     icon: Mail,
-    iconColor: 'text-blue-400',
+    iconColor: 'text-white/50',
     overallStatus: 'passed',
     items: [
       { id: 'cm-1', label: 'Every stage triggers correct channel (SMS/Email/Dashboard)', status: 'passed', lastVerified: '2024-06-25T14:47:00Z', detail: '12-stage matrix active, 847 notifications sent today' },
@@ -127,7 +127,7 @@ const LOOPS: LoopSection[] = [
     id: 'coordinator-approval',
     title: 'Coordinator Approval Loop',
     icon: ShieldCheck,
-    iconColor: 'text-red-400',
+    iconColor: 'text-white/60',
     overallStatus: 'passed',
     items: [
       { id: 'ca-1', label: 'No deployment without coordinator approval (hard gate)', status: 'passed', lastVerified: '2024-06-25T14:00:00Z', detail: '0 unauthorized deployments — gate verified daily' },
@@ -140,7 +140,7 @@ const LOOPS: LoopSection[] = [
     id: 'rollback',
     title: 'Rollback Loop',
     icon: HardDrive,
-    iconColor: 'text-yellow-400',
+    iconColor: 'text-white/40',
     overallStatus: 'pending',
     items: [
       { id: 'rb-1', label: 'Pre-deployment backup always created (immutable snapshot)', status: 'passed', lastVerified: '2024-06-25T14:00:00Z', detail: 'All 12 deployments today had snapshots, avg 2.3s creation' },
@@ -153,7 +153,7 @@ const LOOPS: LoopSection[] = [
     id: 'billing',
     title: 'Billing & Subscription Loop',
     icon: CreditCard,
-    iconColor: 'text-pink-400',
+    iconColor: 'text-white/45',
     overallStatus: 'passed',
     items: [
       { id: 'bl-1', label: 'Monthly usage tracking → invoice generation → Stripe charge', status: 'passed', lastVerified: '2024-06-25T09:00:00Z', detail: 'June invoices: 254 sent, 252 charged (2 failed)' },
@@ -166,7 +166,7 @@ const LOOPS: LoopSection[] = [
     id: 'security',
     title: 'Security & Compliance Loop',
     icon: Shield,
-    iconColor: 'text-green-400',
+    iconColor: 'text-lime',
     overallStatus: 'passed',
     items: [
       { id: 'sc-1', label: 'Zero-knowledge credentials (verified, no plaintext storage)', status: 'passed', lastVerified: '2024-06-25T14:47:00Z', detail: 'Verified: server never sees plaintext, keys in browser only' },
@@ -193,7 +193,7 @@ const LOOPS: LoopSection[] = [
     id: 'customer-success',
     title: 'Customer Success Loop',
     icon: ThumbsUp,
-    iconColor: 'text-blue-400',
+    iconColor: 'text-white/50',
     overallStatus: 'passed',
     items: [
       { id: 'cs-1', label: 'Post-fix verification → "Yes" → close → NPS survey', status: 'passed', lastVerified: '2024-06-25T14:30:00Z', detail: '18 verifications today, 17 "Yes", 1 "No" (reopened)' },
@@ -223,9 +223,9 @@ function statusLabel(loop: LoopSection): string {
 
 function overallBadgeClass(loop: LoopSection): string {
   switch (loop.overallStatus) {
-    case 'passed': return 'bg-green-500/10 text-green-400 border-green-500/20';
-    case 'failed': return 'bg-red-500/10 text-red-400 border-red-500/20';
-    case 'partial': return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+    case 'passed': return 'bg-lime/10 text-lime border-lime/20';
+    case 'failed': return 'bg-white/5 text-white/40 border-white/10';
+    case 'partial': return 'bg-white/5 text-white/40 border-white/10';
     case 'pending': return 'bg-white/5 text-white/30 border-white/10';
   }
 }
@@ -331,10 +331,10 @@ export function GapSealAudit() {
           ALERTS
       ═══════════════════════════════════════════ */}
       {brokenLoops.length > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-red-500/5 border border-red-500/20">
-          <Siren className="w-5 h-5 text-red-400 shrink-0" />
+        <div className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/10">
+          <Siren className="w-5 h-5 text-white/60 shrink-0" />
           <div>
-            <span className="text-xs font-bold text-red-400">
+            <span className="text-xs font-bold text-white/60">
               {brokenLoops.length} loop{brokenLoops.length > 1 ? 's' : ''} FAILED
             </span>
             <span className="text-xs text-white/40 ml-2">
@@ -344,10 +344,10 @@ export function GapSealAudit() {
         </div>
       )}
       {untestedLoops.length > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-yellow-500/5 border border-yellow-500/20">
-          <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0" />
+        <div className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/10">
+          <AlertTriangle className="w-5 h-5 text-white/40 shrink-0" />
           <div>
-            <span className="text-xs font-bold text-yellow-400">
+            <span className="text-xs font-bold text-white/40">
               {untestedLoops.length} loop{untestedLoops.length > 1 ? 's' : ''} untested for &gt;7 days
             </span>
             <span className="text-xs text-white/40 ml-2">
@@ -366,7 +366,7 @@ export function GapSealAudit() {
             <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
               <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="3" className="text-white/5" />
               <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="3"
-                className={healthPercent >= 90 ? 'text-green-400' : healthPercent >= 70 ? 'text-yellow-400' : 'text-red-400'}
+                className={healthPercent >= 90 ? 'text-lime' : healthPercent >= 70 ? 'text-white/40' : 'text-white/60'}
                 strokeDasharray={`${healthPercent} ${100 - healthPercent}`}
                 strokeLinecap="square"
               />
@@ -377,16 +377,16 @@ export function GapSealAudit() {
           </div>
           <div>
             <span className="text-xs text-white/40 uppercase tracking-wider block">Health Score</span>
-            <span className={`text-sm font-bold ${healthPercent >= 90 ? 'text-green-400' : healthPercent >= 70 ? 'text-yellow-400' : 'text-red-400'}`}>
+            <span className={`text-sm font-bold ${healthPercent >= 90 ? 'text-lime' : healthPercent >= 70 ? 'text-white/40' : 'text-white/60'}`}>
               {healthPercent >= 90 ? 'HEALTHY' : healthPercent >= 70 ? 'ATTENTION NEEDED' : 'CRITICAL'}
             </span>
           </div>
         </div>
 
         {[
-          { label: 'Passed', value: passedCount, total: totalCount, color: 'text-green-400', bar: 'bg-green-400' },
-          { label: 'Failed', value: failedCount, total: totalCount, color: 'text-red-400', bar: 'bg-red-400' },
-          { label: 'Pending', value: pendingCount, total: totalCount, color: 'text-yellow-400', bar: 'bg-yellow-400' },
+          { label: 'Passed', value: passedCount, total: totalCount, color: 'text-lime', bar: 'bg-lime' },
+          { label: 'Failed', value: failedCount, total: totalCount, color: 'text-white/60', bar: 'bg-red-400' },
+          { label: 'Pending', value: pendingCount, total: totalCount, color: 'text-white/40', bar: 'bg-yellow-400' },
         ].map(s => (
           <div key={s.label} className="bg-surface border border-white/5 p-4">
             <span className="text-xs text-white/40 uppercase tracking-wider block mb-2">{s.label}</span>
@@ -434,14 +434,14 @@ export function GapSealAudit() {
                     {statusLabel(loop)}
                   </span>
                   {oldestDays > 7 && (
-                    <span className="flex items-center gap-1 text-[9px] text-yellow-400">
+                    <span className="flex items-center gap-1 text-[9px] text-white/40">
                       <AlertTriangle className="w-3 h-3" />
                       {oldestDays}d ago
                     </span>
                   )}
                   <div className="flex-1 flex items-center gap-2 ml-2">
                     <div className="flex-1 h-1 bg-white/5 max-w-[120px]">
-                      <div className="h-full bg-green-400" style={{ width: `${pct}%` }} />
+                      <div className="h-full bg-lime" style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-[10px] text-white/30 font-mono">{pct}%</span>
                   </div>
@@ -455,17 +455,17 @@ export function GapSealAudit() {
                       {/* Status icon */}
                       <div className="mt-0.5 shrink-0">
                         {item.status === 'passed' ? (
-                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <CheckCircle className="w-4 h-4 text-lime" />
                         ) : item.status === 'failed' ? (
-                          <XCircle className="w-4 h-4 text-red-400" />
+                          <XCircle className="w-4 h-4 text-white/60" />
                         ) : (
-                          <Clock className="w-4 h-4 text-yellow-400" />
+                          <Clock className="w-4 h-4 text-white/40" />
                         )}
                       </div>
 
                       {/* Label */}
                       <div className="flex-1 min-w-0">
-                        <p className={`text-xs ${item.status === 'failed' ? 'text-red-400' : 'text-white/70'}`}>
+                        <p className={`text-xs ${item.status === 'failed' ? 'text-white/60' : 'text-white/70'}`}>
                           {item.label}
                         </p>
                       </div>
@@ -528,15 +528,15 @@ export function GapSealAudit() {
       ═══════════════════════════════════════════ */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 border-t border-white/5 pt-4">
         <div className="flex items-center gap-2 text-[10px] text-white/20">
-          <CheckCircle className="w-3 h-3 text-green-400" />
+          <CheckCircle className="w-3 h-3 text-lime" />
           <span>{passedCount} checks passed</span>
         </div>
         <div className="flex items-center gap-2 text-[10px] text-white/20">
-          <XCircle className="w-3 h-3 text-red-400" />
+          <XCircle className="w-3 h-3 text-white/60" />
           <span>{failedCount} checks failed</span>
         </div>
         <div className="flex items-center gap-2 text-[10px] text-white/20">
-          <Clock className="w-3 h-3 text-yellow-400" />
+          <Clock className="w-3 h-3 text-white/40" />
           <span>{pendingCount} checks pending</span>
         </div>
         <div className="flex items-center gap-2 text-[10px] text-white/20">

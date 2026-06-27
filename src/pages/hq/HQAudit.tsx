@@ -1,74 +1,88 @@
-import { useState } from 'react';
-import { Search, Download, Shield } from 'lucide-react';
+// ═══════════════════════════════════════════════════════════════
+// HQ AUDIT — Compliance-grade audit log from Supabase
+// CSV export, search, filters, monochrome + lime
+// ═══════════════════════════════════════════════════════════════
+
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { Search, Download, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 
 interface AuditEntry {
   id: string;
-  timestamp: string;
-  actor: string;
-  actorRole: string;
+  created_at: string;
+  actor_id: string;
+  actor_type: string;
   action: string;
-  target: string;
-  targetType: string;
-  details: string;
-  severity: 'info' | 'warn' | 'critical';
-  ipAddress: string;
+  target_id: string;
+  target_type: string;
+  details: Record<string, unknown>;
+  ip_address: string;
+  severity: string;
 }
 
-const auditLog: AuditEntry[] = [
-  { id: 'AUD-9842', timestamp: '2026-06-25 14:32:15', actor: 'Alex Chen', actorRole: 'engineer', action: 'SESSION_START', target: 'SES-4821', targetType: 'session', details: 'Joined active session for INC-0641', severity: 'info', ipAddress: '10.0.4.12' },
-  { id: 'AUD-9841', timestamp: '2026-06-25 14:31:22', actor: 'system', actorRole: 'ai', action: 'ESCALATION', target: 'INC-0641', targetType: 'incident', details: 'AI confidence dropped to 72%, auto-escalated to on-call engineer', severity: 'warn', ipAddress: 'internal' },
-  { id: 'AUD-9840', timestamp: '2026-06-25 14:28:45', actor: 'REPAIR-agent', actorRole: 'ai', action: 'REPAIR_ATTEMPT', target: 'checkout.tsx', targetType: 'file', details: 'Applied patch to fix CSS import, build failed with error #4821', severity: 'warn', ipAddress: 'internal' },
-  { id: 'AUD-9839', timestamp: '2026-06-25 14:25:10', actor: 'ISOLATE-agent', actorRole: 'ai', action: 'VM_CREATE', target: 'VM-4821', targetType: 'vm', details: 'Spawned isolated VM with 2vCPU/4GB, cloned acme-corp.com', severity: 'info', ipAddress: 'internal' },
-  { id: 'AUD-9838', timestamp: '2026-06-25 14:20:00', actor: 'TRIAGE-agent', actorRole: 'ai', action: 'INCIDENT_CREATE', target: 'INC-0641', targetType: 'incident', details: 'Emergency ticket from shop.acme-corp.com, classified as medium severity', severity: 'info', ipAddress: 'internal' },
-  { id: 'AUD-9837', timestamp: '2026-06-25 13:45:30', actor: 'Coordinator (system)', actorRole: 'coordinator', action: 'DEPLOY_APPROVE', target: 'SES-4820', targetType: 'session', details: 'Coordinator approved deployment for checkout fix, AI confidence 88%', severity: 'info', ipAddress: '10.0.1.05' },
-  { id: 'AUD-9836', timestamp: '2026-06-25 13:44:12', actor: 'VALIDATE-agent', actorRole: 'ai', action: 'VALIDATION_RESULT', target: 'SES-4820', targetType: 'session', details: 'Validation passed 8/10 checks, AI confidence 88%, awaiting approval', severity: 'warn', ipAddress: 'internal' },
-  { id: 'AUD-9835', timestamp: '2026-06-25 12:38:05', actor: 'Morgan Lee', actorRole: 'engineer', action: 'SESSION_END', target: 'SES-4819', targetType: 'session', details: 'Session completed, fix deployed successfully, 1203 keystrokes logged', severity: 'info', ipAddress: '10.0.4.15' },
-  { id: 'AUD-9834', timestamp: '2026-06-25 12:10:00', actor: 'Morgan Lee', actorRole: 'engineer', action: 'SESSION_START', target: 'SES-4819', targetType: 'session', details: 'Manually escalated from AI pipeline for api.startup.io memory leak', severity: 'info', ipAddress: '10.0.4.15' },
-  { id: 'AUD-9833', timestamp: '2026-06-25 11:52:18', actor: 'Jordan Smith', actorRole: 'engineer', action: 'KEYSTROKE_LOG', target: 'VM-4818', targetType: 'vm', details: 'Recorded 567 keystrokes during 17-minute session', severity: 'info', ipAddress: '10.0.4.08' },
-];
-
 export function HQAudit() {
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
 
-  const filtered = auditLog.filter((entry) => {
-    const matchesSearch = entry.action.toLowerCase().includes(search.toLowerCase()) ||
-      entry.target.toLowerCase().includes(search.toLowerCase()) ||
-      entry.actor.toLowerCase().includes(search.toLowerCase());
-    const matchesRole = filterRole === 'all' || entry.actorRole === filterRole;
-    const matchesSeverity = filterSeverity === 'all' || entry.severity === filterSeverity;
-    return matchesSearch && matchesRole && matchesSeverity;
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
+      setEntries(data || []);
+      setLoading(false);
+    }
+    load();
+    const ch = supabase.channel('hq-audit').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs' }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const filtered = entries.filter(e => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || e.action?.toLowerCase().includes(q) || e.target_id?.toLowerCase().includes(q) || e.actor_id?.toLowerCase().includes(q);
+    const matchRole = filterRole === 'all' || e.actor_type === filterRole;
+    const matchSeverity = filterSeverity === 'all' || e.severity === filterSeverity;
+    return matchSearch && matchRole && matchSeverity;
   });
 
-  const severityColors = {
-    info: 'text-cyan',
-    warn: 'text-yellow-500',
-    critical: 'text-red-500',
+  const handleExportCSV = () => {
+    const headers = ['ID', 'Timestamp', 'Actor', 'Actor Type', 'Action', 'Target', 'Target Type', 'Severity', 'IP', 'Details'];
+    const rows = filtered.map(e => [
+      e.id, e.created_at, e.actor_id, e.actor_type, e.action, e.target_id, e.target_type, e.severity, e.ip_address || '', JSON.stringify(e.details || {}),
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `uptimeops-audit-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${filtered.length} audit entries to CSV`);
   };
 
-  const roleColors: Record<string, string> = {
-    ai: 'text-cyan',
-    engineer: 'text-lime',
-    coordinator: 'text-magenta',
-  };
+  const severityCls = (s: string) => s === 'critical' ? 'text-white/60' : s === 'warn' ? 'text-white/50' : 'text-white/35';
+  const roleCls = (r: string) => r === 'ai' ? 'text-white/50' : r === 'engineer' ? 'text-lime' : r === 'coordinator' ? 'text-white/60' : 'text-white/40';
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-5 h-5 text-lime animate-spin" /><span className="ml-2 text-sm text-white/40">Loading audit log...</span>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black tracking-tight">AUDIT LOG</h2>
-          <p className="text-sm text-white/40 mt-1">Compliance-grade activity logging</p>
+          <p className="text-sm text-white/40 mt-1">Compliance-grade activity logging — {entries.length} entries</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 border border-white/10 text-sm text-white/60 hover:border-lime hover:text-lime transition-colors">
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 border border-white/10 text-sm text-white/60 hover:border-lime hover:text-lime transition-colors">
-            <Shield className="w-4 h-4" />
-            Compliance Report
+          <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2 border border-white/10 text-xs text-white/60 hover:border-lime hover:text-lime transition-colors font-bold uppercase tracking-wider">
+            <Download className="w-4 h-4" /> Export CSV
           </button>
         </div>
       </div>
@@ -76,28 +90,16 @@ export function HQAudit() {
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search audit log..."
-            className="pl-10 bg-surface border-white/10 text-white placeholder:text-white/20"
-          />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search audit log..." className="pl-10 bg-surface border-white/10 text-white placeholder:text-white/20" />
         </div>
-        <select
-          value={filterRole}
-          onChange={(e) => setFilterRole(e.target.value)}
-          className="bg-surface border border-white/10 text-white text-sm px-3 py-2 focus:border-lime outline-none"
-        >
+        <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="bg-surface border border-white/10 text-white/60 text-xs px-3 py-2 outline-none rounded-lg">
           <option value="all">All Actors</option>
           <option value="ai">AI Agents</option>
           <option value="engineer">Engineers</option>
           <option value="coordinator">Coordinators</option>
+          <option value="customer">Customers</option>
         </select>
-        <select
-          value={filterSeverity}
-          onChange={(e) => setFilterSeverity(e.target.value)}
-          className="bg-surface border border-white/10 text-white text-sm px-3 py-2 focus:border-lime outline-none"
-        >
+        <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)} className="bg-surface border border-white/10 text-white/60 text-xs px-3 py-2 outline-none rounded-lg">
           <option value="all">All Severities</option>
           <option value="info">Info</option>
           <option value="warn">Warning</option>
@@ -105,49 +107,31 @@ export function HQAudit() {
         </select>
       </div>
 
-      <div className="bg-surface border border-white/5 overflow-x-auto">
+      <div className="border border-white/10 rounded-xl bg-white/[0.02] overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/5">
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">ID</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Time</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Actor</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Role</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Action</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Target</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">Severity</th>
-              <th className="text-left text-xs font-bold uppercase tracking-wider text-white/40 p-4">IP</th>
+              {['ID', 'Time', 'Actor', 'Role', 'Action', 'Target', 'Severity', 'IP'].map(h => (
+                <th key={h} className="text-left text-[10px] font-bold uppercase tracking-wider text-white/30 p-4">{h}</th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {filtered.map((entry) => (
-              <tr key={entry.id} className="hover:bg-white/[0.02] transition-colors">
-                <td className="p-4 text-sm font-mono text-white/60">{entry.id}</td>
-                <td className="p-4 text-xs font-mono text-white/40">{entry.timestamp}</td>
-                <td className="p-4 text-sm">{entry.actor}</td>
-                <td className="p-4">
-                  <span className={`text-xs font-bold uppercase ${roleColors[entry.actorRole] || 'text-white/40'}`}>
-                    {entry.actorRole}
-                  </span>
-                </td>
-                <td className="p-4 text-xs font-bold uppercase">{entry.action}</td>
-                <td className="p-4">
-                  <div className="text-sm font-mono">{entry.target}</div>
-                  <div className="text-xs text-white/40">{entry.details}</div>
-                </td>
-                <td className="p-4">
-                  <span className={`text-xs font-bold uppercase ${severityColors[entry.severity]}`}>
-                    {entry.severity}
-                  </span>
-                </td>
-                <td className="p-4 text-xs font-mono text-white/40">{entry.ipAddress}</td>
+            {filtered.map(e => (
+              <tr key={e.id} className="hover:bg-white/[0.02] transition-colors">
+                <td className="p-4 text-xs font-mono text-white/45">{e.id?.slice(0, 8)}</td>
+                <td className="p-4 text-xs font-mono text-white/35">{new Date(e.created_at).toLocaleString()}</td>
+                <td className="p-4 text-xs text-white/50">{e.actor_id?.slice(0, 12)}</td>
+                <td className="p-4"><span className={`text-xs font-bold uppercase ${roleCls(e.actor_type)}`}>{e.actor_type}</span></td>
+                <td className="p-4 text-xs font-bold uppercase text-white/60">{e.action}</td>
+                <td className="p-4"><div className="text-xs font-mono text-white/45">{e.target_id}</div></td>
+                <td className="p-4"><span className={`text-xs font-bold uppercase ${severityCls(e.severity)}`}>{e.severity}</span></td>
+                <td className="p-4 text-xs font-mono text-white/25">{e.ip_address || '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {filtered.length === 0 && (
-          <div className="p-8 text-center text-sm text-white/40">No audit entries found.</div>
-        )}
+        {filtered.length === 0 && <div className="p-8 text-center text-sm text-white/30">No audit entries found.</div>}
       </div>
     </div>
   );

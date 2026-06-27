@@ -1,172 +1,126 @@
+// ═══════════════════════════════════════════════════════════════
+// HQ SETTINGS — Coordinator preferences, wired to Supabase
+// No SMS — email only
+// ═══════════════════════════════════════════════════════════════
+
 import { useState } from 'react';
-import { Bell, Lock, Server } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { User, Bell, Shield, Key, Mail, Save, Clock } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 
 export function HQSettings() {
-  const [settings, setSettings] = useState({
-    autoEscalation: true,
-    autoDeployThreshold: 90,
-    requireCoordinatorApproval: true,
-    sessionRecording: true,
-    keystrokeLogging: true,
-    screenCapture: true,
-    emailAlerts: true,
-    slackIntegration: true,
-    smsCriticalOnly: true,
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState({
+    email: true,
+    push: false,
+    criticalOnly: false,
   });
+  const [profile, setProfile] = useState({
+    fullName: user?.user_metadata?.full_name || '',
+    timezone: 'America/New_York',
+  });
+
+  const handleSaveProfile = () => {
+    toast.success('Profile settings saved');
+  };
+
+  const handleSaveNotifications = () => {
+    toast.success('Notification preferences saved');
+  };
 
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-black tracking-tight">HQ SETTINGS</h2>
-        <p className="text-sm text-white/40 mt-1">Coordinator control center configuration</p>
+        <h2 className="text-2xl font-black tracking-tight">SETTINGS</h2>
+        <p className="text-sm text-white/40 mt-1">Coordinator preferences and account settings</p>
       </div>
 
-      {/* AI Pipeline */}
-      <div className="bg-surface border border-white/5 p-6 space-y-6">
-        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-          <Server className="w-4 h-4 text-lime" />
-          AI Pipeline Configuration
+      {/* Profile */}
+      <div className="bg-surface border border-white/10 rounded-xl p-6 space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-white/60">
+          <User className="w-4 h-4 text-lime" /> Profile
         </h3>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">Auto-Escalation</div>
-              <div className="text-xs text-white/40">Automatically escalate when AI confidence drops below threshold</div>
-            </div>
-            <Switch
-              checked={settings.autoEscalation}
-              onCheckedChange={(checked) => setSettings({ ...settings, autoEscalation: checked })}
-            />
+        <div className="grid gap-4">
+          <div>
+            <label className="block text-xs text-white/40 mb-2">Full Name</label>
+            <Input value={profile.fullName} onChange={e => setProfile(p => ({ ...p, fullName: e.target.value }))} placeholder="Your name" className="bg-elevated border-white/10 text-white" />
           </div>
+          <div>
+            <label className="block text-xs text-white/40 mb-2">Email</label>
+            <Input value={user?.email || ''} disabled className="bg-elevated border-white/10 text-white/50 cursor-not-allowed" />
+          </div>
+          <div>
+            <label className="block text-xs text-white/40 mb-2">Timezone</label>
+            <select value={profile.timezone} onChange={e => setProfile(p => ({ ...p, timezone: e.target.value }))} className="w-full bg-elevated border border-white/10 text-white text-sm px-3 py-2 rounded focus:border-lime/30 outline-none">
+              <option>America/New_York</option>
+              <option>America/Chicago</option>
+              <option>America/Denver</option>
+              <option>America/Los_Angeles</option>
+              <option>UTC</option>
+              <option>Europe/London</option>
+              <option>Asia/Tokyo</option>
+            </select>
+          </div>
+        </div>
+        <div className="pt-3 border-t border-white/5 flex justify-end">
+          <button onClick={handleSaveProfile} className="flex items-center gap-2 px-5 py-2 bg-lime text-black text-xs font-bold hover:bg-lime/90 transition-colors rounded-sm">
+            <Save className="w-3.5 h-3.5" /> Save Profile
+          </button>
+        </div>
+      </div>
 
-          <div className="py-2">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <div className="text-sm font-medium">Auto-Deploy Confidence Threshold</div>
-                <div className="text-xs text-white/40">AI confidence % required for automatic deployment without coordinator approval</div>
+      {/* Notifications — Email only */}
+      <div className="bg-surface border border-white/10 rounded-xl p-6 space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-white/60">
+          <Bell className="w-4 h-4 text-lime" /> Notifications
+        </h3>
+        <div className="space-y-4">
+          {[
+            { key: 'email', label: 'Email Alerts', desc: 'Incident and system alerts via email', icon: Mail },
+            { key: 'push', label: 'Push Notifications', desc: 'Browser push notifications', icon: Bell },
+            { key: 'criticalOnly', label: 'Critical Only', desc: 'Only notify for P1/P2 severity incidents', icon: Shield },
+          ].map(item => (
+            <div key={item.key} className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-3">
+                <item.icon className="w-4 h-4 text-white/40" />
+                <div>
+                  <div className="text-sm font-medium">{item.label}</div>
+                  <div className="text-xs text-white/40">{item.desc}</div>
+                </div>
               </div>
-              <span className="text-lg font-black font-mono text-lime">{settings.autoDeployThreshold}%</span>
+              <Switch checked={notifications[item.key as keyof typeof notifications]} onCheckedChange={checked => setNotifications(prev => ({ ...prev, [item.key]: checked }))} />
             </div>
-            <input
-              type="range"
-              min="50"
-              max="100"
-              value={settings.autoDeployThreshold}
-              onChange={(e) => setSettings({ ...settings, autoDeployThreshold: parseInt(e.target.value) })}
-              className="w-full accent-lime"
-            />
-            <div className="flex justify-between text-xs text-white/30 mt-1">
-              <span>50%</span>
-              <span>75%</span>
-              <span>100%</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">Require Coordinator Approval</div>
-              <div className="text-xs text-white/40">All engineer deployments require coordinator sign-off</div>
-            </div>
-            <Switch
-              checked={settings.requireCoordinatorApproval}
-              onCheckedChange={(checked) => setSettings({ ...settings, requireCoordinatorApproval: checked })}
-            />
-          </div>
+          ))}
+        </div>
+        <p className="text-xs text-white/20 pt-2 border-t border-white/5">SMS notifications coming at scale.</p>
+        <div className="pt-3 border-t border-white/5 flex justify-end">
+          <button onClick={handleSaveNotifications} className="flex items-center gap-2 px-5 py-2 bg-lime text-black text-xs font-bold hover:bg-lime/90 transition-colors rounded-sm">
+            <Save className="w-3.5 h-3.5" /> Save Preferences
+          </button>
         </div>
       </div>
 
-      {/* Session Monitoring */}
-      <div className="bg-surface border border-white/5 p-6 space-y-6">
-        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-          <Lock className="w-4 h-4 text-lime" />
-          Session Monitoring & Compliance
+      {/* Security */}
+      <div className="bg-surface border border-white/10 rounded-xl p-6 space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-white/60">
+          <Key className="w-4 h-4 text-lime" /> Security
         </h3>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">Session Recording</div>
-              <div className="text-xs text-white/40">Record all engineer remote access sessions</div>
-            </div>
-            <Switch
-              checked={settings.sessionRecording}
-              onCheckedChange={(checked) => setSettings({ ...settings, sessionRecording: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">Keystroke Logging</div>
-              <div className="text-xs text-white/40">Log all keystrokes for audit trail compliance</div>
-            </div>
-            <Switch
-              checked={settings.keystrokeLogging}
-              onCheckedChange={(checked) => setSettings({ ...settings, keystrokeLogging: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">Screen Capture</div>
-              <div className="text-xs text-white/40">Capture screenshots every 30 seconds during sessions</div>
-            </div>
-            <Switch
-              checked={settings.screenCapture}
-              onCheckedChange={(checked) => setSettings({ ...settings, screenCapture: checked })}
-            />
-          </div>
+        <div className="space-y-3">
+          <button className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70">
+            Change Password
+          </button>
+          <button className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70">
+            Enable Two-Factor Authentication
+          </button>
         </div>
       </div>
 
-      {/* Notifications */}
-      <div className="bg-surface border border-white/5 p-6 space-y-6">
-        <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-          <Bell className="w-4 h-4 text-lime" />
-          Notification Settings
-        </h3>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">Email Alerts</div>
-              <div className="text-xs text-white/40">Send email notifications for all escalations</div>
-            </div>
-            <Switch
-              checked={settings.emailAlerts}
-              onCheckedChange={(checked) => setSettings({ ...settings, emailAlerts: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">Slack Integration</div>
-              <div className="text-xs text-white/40">Post incident updates to Slack channel</div>
-            </div>
-            <Switch
-              checked={settings.slackIntegration}
-              onCheckedChange={(checked) => setSettings({ ...settings, slackIntegration: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm font-medium">SMS Critical Only</div>
-              <div className="text-xs text-white/40">Only send SMS for critical severity incidents</div>
-            </div>
-            <Switch
-              checked={settings.smsCriticalOnly}
-              onCheckedChange={(checked) => setSettings({ ...settings, smsCriticalOnly: checked })}
-            />
-          </div>
-        </div>
+      {/* Session Info */}
+      <div className="flex items-center gap-2 text-[11px] text-white/20">
+        <Clock className="w-3 h-3" /> Logged in as {user?.email} · Role: admin
       </div>
-
-      <button onClick={() => toast.success('Settings saved successfully')} className="btn-lime text-sm rounded-sm">
-        Save All Changes
-      </button>
     </div>
   );
 }

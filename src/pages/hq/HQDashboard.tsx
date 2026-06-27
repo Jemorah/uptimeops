@@ -99,8 +99,8 @@ export function HQDashboard() {
       {/* KPI Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {[
-          { label: 'Open Incidents', value: stats.open, icon: AlertTriangle, color: 'text-amber-400' },
-          { label: 'P1 Critical', value: stats.critical, icon: Zap, color: 'text-red-500' },
+          { label: 'Open Incidents', value: stats.open, icon: AlertTriangle, color: 'text-white/40' },
+          { label: 'P1 Critical', value: stats.critical, icon: Zap, color: 'text-white/60' },
           { label: 'Customers', value: stats.customers, icon: Users, color: 'text-[#22d3ee]' },
           { label: 'MRR', value: `$${stats.mrr.toLocaleString()}`, icon: DollarSign, color: 'text-[#a3e635]' },
           { label: 'Engineers On-Call', value: stats.onCall, icon: TrendingUp, color: 'text-[#a3e635]' },
@@ -136,8 +136,8 @@ export function HQDashboard() {
                 className="w-full px-5 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
               >
                 <div className={`w-2 h-2 rounded-full shrink-0 ${
-                  inc.priority === 'P1_CRITICAL' ? 'bg-red-500' :
-                  inc.priority === 'P2_HIGH' ? 'bg-amber-400' : 'bg-[#22d3ee]'
+                  inc.priority === 'P1_CRITICAL' ? 'bg-white/50' :
+                  inc.priority === 'P2_HIGH' ? 'bg-white/35' : 'bg-white/20'
                 }`} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{inc.title}</div>

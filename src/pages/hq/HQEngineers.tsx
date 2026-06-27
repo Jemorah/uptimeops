@@ -1,118 +1,113 @@
-import { useState } from 'react';
-import { Terminal } from 'lucide-react';
+// ═══════════════════════════════════════════════════════════════
+// HQ ENGINEERS — Real engineer profiles from Supabase
+// Monochrome + lime palette
+// ═══════════════════════════════════════════════════════════════
+
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { Terminal, Loader2, Radio, Clock, Users } from 'lucide-react';
 
 interface Engineer {
   id: string;
   name: string;
   email: string;
-  status: 'active' | 'available' | 'offline' | 'on_break';
-  currentSession: string | null;
-  resolvedToday: number;
-  totalResolved: number;
-  avgHandleTime: string;
-  lastActive: string;
-  certifications: string[];
+  specialization: string[];
+  is_on_call: boolean;
+  status: string;
+  created_at: string;
 }
 
-const engineers: Engineer[] = [
-  { id: 'ENG-001', name: 'Alex Chen', email: 'alex@uptimeops.io', status: 'active', currentSession: 'SES-4821', resolvedToday: 5, totalResolved: 342, avgHandleTime: '4.2m', lastActive: 'now', certifications: ['Senior', 'Database', 'Security'] },
-  { id: 'ENG-002', name: 'Jordan Smith', email: 'jordan@uptimeops.io', status: 'active', currentSession: 'SES-4820', resolvedToday: 3, totalResolved: 289, avgHandleTime: '5.1m', lastActive: 'now', certifications: ['Senior', 'Frontend', 'DevOps'] },
-  { id: 'ENG-003', name: 'Morgan Lee', email: 'morgan@uptimeops.io', status: 'active', currentSession: 'SES-4819', resolvedToday: 4, totalResolved: 198, avgHandleTime: '3.8m', lastActive: 'now', certifications: ['Mid', 'API', 'Performance'] },
-  { id: 'ENG-004', name: 'Sam Rivera', email: 'sam@uptimeops.io', status: 'available', currentSession: null, resolvedToday: 0, totalResolved: 156, avgHandleTime: '6.2m', lastActive: '15m ago', certifications: ['Junior', 'Frontend'] },
-  { id: 'ENG-005', name: 'Taylor Park', email: 'taylor@uptimeops.io', status: 'offline', currentSession: null, resolvedToday: 0, totalResolved: 410, avgHandleTime: '3.5m', lastActive: '2h ago', certifications: ['Senior', 'Security', 'Infrastructure'] },
-  { id: 'ENG-006', name: 'Riley Kim', email: 'riley@uptimeops.io', status: 'on_break', currentSession: null, resolvedToday: 2, totalResolved: 267, avgHandleTime: '4.8m', lastActive: '20m ago', certifications: ['Mid', 'Database', 'DevOps'] },
-];
-
 export function HQEngineers() {
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
-  const filtered = engineers.filter((eng) => filter === 'all' || eng.status === filter);
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase.from('engineer_profiles').select('*').order('created_at', { ascending: false });
+      setEngineers(data || []);
+      setLoading(false);
+    }
+    load();
+    const ch = supabase.channel('hq-eng').on('postgres_changes', { event: '*', schema: 'public', table: 'engineer_profiles' }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
 
-  const statusConfig = {
-    active: { color: 'text-cyan', bg: 'bg-cyan/10', label: 'Active' },
-    available: { color: 'text-green-500', bg: 'bg-green-500/10', label: 'Available' },
-    offline: { color: 'text-white/30', bg: 'bg-white/5', label: 'Offline' },
-    on_break: { color: 'text-yellow-500', bg: 'bg-yellow-500/10', label: 'On Break' },
-  };
+  const filtered = engineers.filter(e => filter === 'all' || e.status === filter || (filter === 'on_call' && e.is_on_call));
+  const onCallCount = engineers.filter(e => e.is_on_call).length;
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-5 h-5 text-lime animate-spin" /><span className="ml-2 text-sm text-white/40">Loading engineers...</span>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-black tracking-tight">ENGINEERS</h2>
-        <p className="text-sm text-white/40 mt-1">Manage on-call engineers and view performance</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-black tracking-tight">ENGINEERS</h2>
+          <p className="text-sm text-white/40 mt-1">{engineers.length} total · {onCallCount} on call</p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-lime/8 border border-lime/15">
+          <Radio className="w-3 h-3 text-lime animate-pulse" />
+          <span className="text-xs font-bold text-lime uppercase tracking-wider">{onCallCount} on call</span>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {['all', 'active', 'available', 'on_break', 'offline'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border transition-colors ${
-              filter === status
-                ? 'border-lime text-lime bg-lime/10'
-                : 'border-white/10 text-white/40 hover:border-white/20'
-            }`}
-          >
-            {status.replace('_', ' ')}
+        {['all', 'active', 'available', 'on_call'].map(status => (
+          <button key={status} onClick={() => setFilter(status)} className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider border transition-colors ${filter === status ? 'border-lime text-lime bg-lime/10' : 'border-white/10 text-white/40 hover:border-white/20'}`}>
+            {status === 'on_call' ? 'On Call' : status}
           </button>
         ))}
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((eng) => {
-          const config = statusConfig[eng.status];
-          return (
-            <div key={eng.id} className="bg-surface border border-white/5 p-6">
-              <div className="flex items-start justify-between mb-4">
+        {filtered.map(eng => (
+          <div key={eng.id} className="bg-surface border border-white/10 rounded-xl p-5">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-sm font-bold text-white/40">{(eng.name || '?').charAt(0).toUpperCase()}</div>
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className={`w-2 h-2 rounded-full ${config.color.replace('text-', 'bg-')}`} />
-                    <span className={`text-xs font-bold uppercase ${config.color}`}>{config.label}</span>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${eng.is_on_call ? 'bg-lime' : 'bg-white/20'}`} />
+                    <h3 className="text-sm font-bold">{eng.name || 'Unnamed'}</h3>
                   </div>
-                  <h3 className="text-lg font-bold">{eng.name}</h3>
                   <p className="text-xs text-white/40 font-mono">{eng.email}</p>
                 </div>
-                <span className="text-xs font-mono text-white/30">{eng.id}</span>
               </div>
-
-              {eng.currentSession && (
-                <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-cyan/5 border border-cyan/20">
-                  <Terminal className="w-3 h-3 text-cyan" />
-                  <span className="text-xs font-mono text-cyan">{eng.currentSession}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center">
-                  <div className="text-lg font-black font-mono">{eng.resolvedToday}</div>
-                  <div className="text-xs text-white/40">Today</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-black font-mono">{eng.totalResolved}</div>
-                  <div className="text-xs text-white/40">Total</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-black font-mono">{eng.avgHandleTime}</div>
-                  <div className="text-xs text-white/40">Avg</div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-1">
-                {eng.certifications.map((cert) => (
-                  <span key={cert} className="text-xs px-2 py-0.5 bg-white/5 text-white/40">
-                    {cert}
-                  </span>
-                ))}
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
-                <span className="text-xs text-white/30">Last active: {eng.lastActive}</span>
-                <button className="text-xs text-lime hover:underline">View Details</button>
-              </div>
+              <span className="text-xs font-mono text-white/30">{eng.id?.slice(0, 8)}</span>
             </div>
-          );
-        })}
+
+            {eng.is_on_call && (
+              <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-lime/5 border border-lime/15 rounded-lg">
+                <Terminal className="w-3 h-3 text-lime" />
+                <span className="text-xs font-mono text-lime">Currently On Call</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {(eng.specialization || []).map(spec => (
+                <span key={spec} className="text-[10px] px-2 py-0.5 bg-white/5 text-white/40 border border-white/5 rounded-full">{spec}</span>
+              ))}
+              {(!eng.specialization || eng.specialization.length === 0) && <span className="text-[10px] text-white/20">No specializations</span>}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-white/5">
+              <span className="text-xs text-white/25 flex items-center gap-1"><Clock className="w-3 h-3" />{eng.status || 'active'}</span>
+              <button className="text-xs text-lime hover:underline font-bold">View Details</button>
+            </div>
+          </div>
+        ))}
       </div>
+
+      {filtered.length === 0 && (
+        <div className="p-10 text-center">
+          <Users className="w-8 h-8 mx-auto mb-3 text-white/10" />
+          <p className="text-sm text-white/30">No engineers match the filter</p>
+        </div>
+      )}
     </div>
   );
 }

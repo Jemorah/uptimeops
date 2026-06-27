@@ -26,9 +26,9 @@ export function HQCommunications() {
 
   const stats = [
     { label: 'Templates', value: comms.templates.length, active: comms.templates.filter(t => t.enabled).length },
-    { label: 'Messages Today', value: comms.stats.totalSent, color: 'text-cyan' },
+    { label: 'Messages Today', value: comms.stats.totalSent, color: 'text-white/60' },
     { label: 'Delivery Rate', value: `${comms.stats.totalSent > 0 ? Math.round((comms.stats.delivered / comms.stats.totalSent) * 100) : 0}%`, color: 'text-lime' },
-    { label: 'Pending Retry', value: comms.stats.pendingRetry, color: 'text-yellow-400' },
+    { label: 'Pending Retry', value: comms.stats.pendingRetry, color: 'text-white/40' },
   ];
 
   return (
