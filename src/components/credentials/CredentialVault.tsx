@@ -112,10 +112,10 @@ export function CredentialVault() {
 
   const getExpiryColor = (expiresAt: string): string => {
     const diff = new Date(expiresAt).getTime() - now;
-    if (diff <= 0) return 'text-red-500';
-    if (diff < 3600000) return 'text-yellow-500'; // < 1 hour
-    if (diff < 86400000) return 'text-orange-400'; // < 24 hours
-    return 'text-green-500';
+    if (diff <= 0) return 'text-white/60';
+    if (diff < 3600000) return 'text-lime'; // < 1 hour
+    if (diff < 86400000) return 'text-white/50'; // < 24 hours
+    return 'text-white/40';
   };
 
   if (isLoading) {
@@ -204,8 +204,8 @@ export function CredentialVault() {
           <div className="pt-2 border-t border-white/5">
             {confirmRevoke === entry.id ? (
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-magenta/5 border border-magenta/20 p-3">
-                  <div className="flex items-center gap-2 text-magenta text-sm font-medium mb-1">
+                <div className="flex-1 bg-red-500/5 border border-red-500/20 p-3">
+                  <div className="flex items-center gap-2 text-red-400 text-sm font-medium mb-1">
                     <AlertTriangle className="w-4 h-4" />
                     Confirm Revocation
                   </div>
@@ -218,7 +218,7 @@ export function CredentialVault() {
                   <button
                     onClick={() => handleRevoke(entry.id)}
                     disabled={revokingId === entry.id}
-                    className="px-4 py-2 bg-magenta text-white text-xs font-bold uppercase tracking-wider hover:bg-magenta/80 transition-colors flex items-center gap-1"
+                    className="px-4 py-2 bg-red-500 text-white text-xs font-bold uppercase tracking-wider hover:bg-red-600 transition-colors flex items-center gap-1"
                   >
                     {revokingId === entry.id ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -238,7 +238,7 @@ export function CredentialVault() {
             ) : (
               <button
                 onClick={() => handleRevoke(entry.id)}
-                className="flex items-center gap-2 text-xs text-magenta hover:text-magenta/70 transition-colors"
+                className="flex items-center gap-2 text-xs text-red-400 hover:text-red-300 transition-colors"
               >
                 <XCircle className="w-3.5 h-3.5" />
                 Revoke Access

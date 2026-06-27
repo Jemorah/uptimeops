@@ -71,6 +71,8 @@ export default defineConfig(({ mode }) => {
 
       // Chunk size warning
       chunkSizeWarningLimit: 500,
+      // Disable CSS minification to avoid lightningcss parsing issues with Tailwind 4
+      cssMinify: false,
     },
 
     // CSS
