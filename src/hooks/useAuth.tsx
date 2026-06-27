@@ -55,7 +55,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     async function init() {
-      // Check for existing session
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
 
@@ -97,11 +96,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
+  // After a successful sign-in, immediately load user + role into state
+  // so ProtectedRoute sees isAuthenticated=true when navigation happens.
   const signIn = useCallback(async (email: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        // Provide more helpful error messages
         let friendlyMessage = error.message;
         if (error.message.includes('Invalid login credentials')) {
           friendlyMessage = 'Invalid email or password. Please try again.';
@@ -110,18 +110,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return { error: { ...error, message: friendlyMessage } as AuthError };
       }
-      if (!data.session) {
+      if (!data.session?.user) {
         return { error: { message: 'No session created. Please try again.', name: 'AuthError', status: 400 } as AuthError };
       }
+
+      // Load role and update state BEFORE returning so the caller
+      // can navigate without a race condition.
+      const role = await getUserRole(data.session.user.id);
+      setState({
+        user: data.session.user,
+        role,
+        isLoading: false,
+        isAuthenticated: true,
+      });
+
       return { error: null };
     } catch (err: any) {
       return { error: { message: err?.message || 'An unexpected error occurred. Please try again.', name: 'AuthError', status: 500 } as AuthError };
     }
   }, []);
 
+  // After signup with auto-confirm, a session is returned.
+  // Load the user into state just like signIn.
   const signUp = useCallback(async (email: string, password: string, metadata?: { full_name?: string }) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -129,7 +142,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           emailRedirectTo: `${window.location.origin}/#/login`,
         },
       });
-      return { error };
+      if (error) {
+        return { error };
+      }
+
+      // If auto-confirm is on, a session is created immediately.
+      if (data.session?.user) {
+        const role = await getUserRole(data.session.user.id);
+        setState({
+          user: data.session.user,
+          role,
+          isLoading: false,
+          isAuthenticated: true,
+        });
+      }
+
+      return { error: null };
     } catch (err: any) {
       return { error: { message: err?.message || 'Signup failed. Please try again.', name: 'AuthError', status: 500 } as AuthError };
     }
@@ -145,7 +173,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        // Check for disabled provider error
         if (error.message?.includes('provider is not enabled') ||
             error.message?.includes('Unsupported provider') ||
             error.code === 'validation_failed') {
@@ -161,8 +188,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error };
       }
 
-      // signInWithOAuth returns a URL to redirect to — if we have no error but also no URL,
-      // something went wrong
       if (!data?.url) {
         return {
           error: {
@@ -173,7 +198,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // Redirect to OAuth provider
       window.location.href = data.url;
       return { error: null };
     } catch (err: any) {

@@ -4,41 +4,27 @@
 
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, getUserRole } from '@/lib/supabase/client';
+import { useAuth, getRoleRedirectPath } from '@/hooks/useAuth';
 import { Loader2, Zap } from 'lucide-react';
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
+  const { isAuthenticated, isLoading, role } = useAuth();
 
   useEffect(() => {
-    async function handleCallback() {
-      // Supabase PKCE flow: exchange code for session
-      const { data: { session }, error } = await supabase.auth.getSession();
+    // After onAuthStateChange fires, the auth context will have
+    // isAuthenticated=true and the correct role. We just wait for it.
+    if (isLoading) return;
 
-      if (error || !session?.user) {
-        console.error('[Auth Callback] Error:', error?.message || 'No session');
-        navigate('/login?error=auth_failed', { replace: true });
-        return;
-      }
-
-      // Get role and redirect
-      const role = await getUserRole(session.user.id);
-
-      switch (role) {
-        case 'coordinator':
-        case 'admin':
-          navigate('/hq', { replace: true });
-          break;
-        case 'engineer':
-          navigate('/engineer', { replace: true });
-          break;
-        default:
-          navigate('/customer', { replace: true });
-      }
+    if (isAuthenticated) {
+      // Auth state is ready — redirect based on role
+      navigate(getRoleRedirectPath(role), { replace: true });
+    } else {
+      // Auth failed
+      console.error('[Auth Callback] Not authenticated after callback');
+      navigate('/login?error=auth_failed', { replace: true });
     }
-
-    handleCallback();
-  }, [navigate]);
+  }, [isLoading, isAuthenticated, role, navigate]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">

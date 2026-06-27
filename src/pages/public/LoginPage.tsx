@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, getRoleRedirectPath } from '@/hooks/useAuth';
 import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { signIn, signUp, signInWithOAuth } = useAuth();
+  const { signIn, signUp, signInWithOAuth, role } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -38,7 +38,7 @@ export function LoginPage() {
           toast.error(error.message);
         } else {
           toast.success('Signed in successfully');
-          navigate(redirectPath || '/customer');
+          navigate(redirectPath || getRoleRedirectPath(role));
         }
       } else {
         if (!fullName.trim()) {
