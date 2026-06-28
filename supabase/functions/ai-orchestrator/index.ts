@@ -1,92 +1,205 @@
-// UptimeOps — AI Multi-Agent Orchestrator
+// UptimeOps v2.1 — AI Multi-Agent Orchestrator
 // Manages the 6-agent pipeline: Triage → Isolate → Repair → Validate → Deploy → Audit
-// Uses real AI via Anthropic/OpenAI/LangSmith fallback chain
+// Integrates with scanner_registry (42 scanners) and scan_results tables
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { logInfo, logError } from '../_shared/logger.ts';
-import { getSupabaseClient } from '../_shared/supabase.ts';
-import { callAI } from '../_shared/ai.ts';
+import { getSupabaseClient, getAuthUser } from '../_shared/supabase.ts';
 
 const FUNCTION = 'ai-orchestrator';
 const AUTO_DEPLOY_THRESHOLD = 90;
+const STAGE_ORDER = ['triage', 'isolate', 'repair', 'validate', 'deploy', 'audit'] as const;
 
-interface PipelineContext {
+type Stage = typeof STAGE_ORDER[number];
+
+interface OrchestratorRequest {
   incident_id: string;
-  pipeline_id: string;
-  current_step: string;
-  step_results: Record<string, unknown>;
+  action?: 'start' | 'retry' | 'approve' | 'status';
+  stage?: Stage;
+}
+
+interface StageResult {
+  success: boolean;
+  scanners_triggered: number;
+  stage: Stage;
   confidence: number;
+  error?: string;
 }
 
-async function executeAgent(agent: string, context: PipelineContext): Promise<{ success: boolean; confidence: number; result: unknown }> {
-  logInfo(FUNCTION, `Executing agent: ${agent}`, { pipeline_id: context.pipeline_id });
+async function getIncident(supabase: any, incident_id: string) {
+  const { data, error } = await supabase
+    .from('incidents')
+    .select('*, customers(*)')
+    .eq('id', incident_id)
+    .single();
+  if (error) throw error;
+  return data;
+}
 
-  const supabase = getSupabaseClient();
+async function getScannersForStage(supabase: any, stage: Stage) {
+  const { data, error } = await supabase
+    .from('scanner_registry')
+    .select('*')
+    .eq('category', stage)
+    .eq('is_active', true)
+    .order('name');
+  if (error) throw error;
+  return data || [];
+}
 
-  // Fetch incident details
-  const { data: incident } = await supabase.from('incidents')
-    .select('*, customers(email, website)').eq('id', context.incident_id).single();
+async function createScanEntries(supabase: any, incident_id: string, scanners: any[], stage: Stage) {
+  const entries = scanners.map(s => ({
+    incident_id,
+    agent_stage: stage,
+    scanner_id: s.id,
+    scanner_name: s.name,
+    status: 'pending' as const,
+    findings: {},
+    severity_counts: {},
+  }));
 
-  const systemPrompt = `You are the ${agent.toUpperCase()} agent in an infrastructure incident response pipeline. Analyze the incident and provide structured JSON output with your findings. Be concise and technical.`;
+  const { data, error } = await supabase
+    .from('scan_results')
+    .insert(entries)
+    .select();
 
-  const prompt = `Incident: "${incident?.title || 'Unknown'}"\nDescription: "${incident?.description || 'No description'}"\nWebsite: ${incident?.website_url || 'unknown'}\nPriority: ${incident?.priority || 'unknown'}\n\nAs the ${agent.toUpperCase()} agent, analyze this incident and provide:\n1. Your assessment\n2. Recommended actions\n3. Confidence score (0-100)\n4. Whether the step passed or failed\n\nRespond in JSON format with keys: assessment, actions (array), confidence (number), passed (boolean).`;
+  if (error) throw error;
+  return data || [];
+}
 
-  const aiResponse = await callAI(prompt, systemPrompt);
+async function invokeStageFunction(
+  stage: Stage,
+  incident_id: string,
+  pipeline_id: string,
+  scan_ids: string[],
+  website_url?: string
+): Promise<StageResult> {
+  const functionName = `ai-${stage}`;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-  // Parse structured response
-  const parsed = aiResponse.content.match(/\{[\s\S]*\}/);
-  let result: Record<string, unknown> = {
-    agent,
-    provider: aiResponse.provider,
-    model: aiResponse.model,
-    timestamp: new Date().toISOString(),
-  };
-  let confidence = 50;
-  let success = true;
+  logInfo(FUNCTION, `Invoking ${functionName}`, { pipeline_id, scan_count: scan_ids.length });
 
-  if (parsed) {
-    try {
-      const json = JSON.parse(parsed[0]);
-      result = { ...result, ...json };
-      confidence = Math.min(100, Math.max(0, Number(json.confidence) || 50));
-      success = json.passed !== false;
-    } catch {
-      result.raw_response = aiResponse.content;
+  try {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ incident_id, pipeline_id, scan_ids, website_url }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`${functionName} returned ${resp.status}: ${err}`);
     }
-  } else {
-    result.raw_response = aiResponse.content;
-    // Extract confidence from text
-    const confidenceMatch = aiResponse.content.match(/confidence[:\s]+(\d+)/i);
-    if (confidenceMatch) confidence = Math.min(100, Math.max(0, parseInt(confidenceMatch[1])));
-    success = !aiResponse.content.toLowerCase().includes('failed') && !aiResponse.content.toLowerCase().includes('cannot');
-  }
 
-  return { success, confidence, result };
+    const result = await resp.json();
+    return {
+      success: result.success !== false,
+      scanners_triggered: scan_ids.length,
+      stage,
+      confidence: result.confidence || 0,
+    };
+  } catch (err) {
+    logError(FUNCTION, `${functionName} invocation failed`, err, { pipeline_id, stage });
+    return {
+      success: false,
+      scanners_triggered: scan_ids.length,
+      stage,
+      confidence: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
-async function escalateToHuman(supabase: any, context: PipelineContext, reason: string) {
-  logInfo(FUNCTION, 'Escalating to human engineer', { pipeline_id: context.pipeline_id, reason });
+async function updatePipeline(
+  supabase: any,
+  pipeline_id: string,
+  updates: Record<string, unknown>
+) {
+  const { error } = await supabase
+    .from('pipeline_states')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('pipeline_id', pipeline_id);
+  if (error) throw error;
+}
+
+async function createNotification(supabase: any, type: string, message: string, entity_id: string) {
+  await supabase.from('notifications').insert({
+    type,
+    message,
+    entity_type: 'pipeline',
+    entity_id,
+  });
+}
+
+async function escalateToHuman(
+  supabase: any,
+  incident_id: string,
+  pipeline_id: string,
+  failed_stage: Stage,
+  reason: string
+) {
+  logInfo(FUNCTION, 'Escalating to human', { pipeline_id, failed_stage, reason });
 
   await supabase.from('human_escalations').insert({
-    incident_id: context.incident_id,
-    pipeline_id: context.pipeline_id,
+    incident_id,
+    pipeline_id,
     trigger_reason: 'ai_pipeline_failure',
-    failed_step: context.current_step,
+    failed_step: failed_stage,
     status: 'pending_assignment',
     reason,
   });
 
-  await supabase.from('pipeline_states')
-    .update({ status: 'escalated', updated_at: new Date().toISOString() })
-    .eq('pipeline_id', context.pipeline_id);
-
-  await supabase.from('notifications').insert({
-    type: 'ai_escalation',
-    message: `AI pipeline escalated: ${reason}`,
-    entity_type: 'pipeline',
-    entity_id: context.pipeline_id,
+  await updatePipeline(supabase, pipeline_id, {
+    status: 'escalated',
+    current_step: failed_stage,
   });
+
+  await createNotification(supabase, 'ai_escalation',
+    `Pipeline ${pipeline_id} escalated: ${reason}`, pipeline_id);
+}
+
+async function runStage(
+  supabase: any,
+  incident_id: string,
+  pipeline_id: string,
+  stage: Stage,
+  website_url?: string
+): Promise<StageResult> {
+  // 1. Get scanners for this stage
+  const scanners = await getScannersForStage(supabase, stage);
+  if (!scanners.length) {
+    logInfo(FUNCTION, `No active scanners for stage ${stage}`, { pipeline_id });
+    return { success: true, scanners_triggered: 0, stage, confidence: 0 };
+  }
+
+  // 2. Create scan_result entries
+  const scanEntries = await createScanEntries(supabase, incident_id, scanners, stage);
+  const scan_ids = scanEntries.map(e => e.id);
+
+  // 3. Update pipeline to show running scanners
+  await updatePipeline(supabase, pipeline_id, {
+    current_step: stage,
+    status: 'running',
+    step_results: { stage_status: `${stage}_running`, scanner_count: scanners.length },
+  });
+
+  // 4. Invoke the stage function
+  const result = await invokeStageFunction(stage, incident_id, pipeline_id, scan_ids, website_url);
+
+  // 5. Update scan entries based on result
+  if (!result.success) {
+    await supabase
+      .from('scan_results')
+      .update({ status: 'failed' })
+      .in('id', scan_ids);
+  }
+
+  return result;
 }
 
 serve(async (req) => {
@@ -94,125 +207,190 @@ serve(async (req) => {
   if (cors) return cors;
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const { incident_id, action } = body;
+    const body: OrchestratorRequest = await req.json().catch(() => ({ incident_id: '' }));
+    const { incident_id, action = 'start', stage } = body;
 
     if (!incident_id) {
-      return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
+      return new Response(
+        JSON.stringify({ error: 'incident_id is required' }),
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     const supabase = getSupabaseClient(req);
-
-    // Retry a failed step
-    if (action === 'retry') {
-      const { data: pipeline } = await supabase.from('pipeline_states')
-        .select('*').eq('incident_id', incident_id).single();
-      if (!pipeline) return new Response(JSON.stringify({ error: 'Pipeline not found' }), { status: 404, headers: corsHeaders });
-
-      const ctx: PipelineContext = {
-        incident_id, pipeline_id: pipeline.pipeline_id,
-        current_step: pipeline.current_step, step_results: pipeline.step_results || {},
-        confidence: pipeline.confidence || 0,
-      };
-
-      const agentResult = await executeAgent(pipeline.current_step, ctx);
-      await supabase.from('pipeline_states').update({
-        confidence: agentResult.confidence,
-        step_results: { ...ctx.step_results, [pipeline.current_step]: agentResult.result },
-        error_count: (pipeline.error_count || 0) + 1,
-        updated_at: new Date().toISOString(),
-      }).eq('pipeline_id', pipeline.pipeline_id);
-
-      return new Response(JSON.stringify({ retried: true, step: pipeline.current_step, result: agentResult }), { headers: corsHeaders });
-    }
+    const user = getAuthUser(req);
 
     // Get or create pipeline
-    let { data: pipeline } = await supabase.from('pipeline_states')
-      .select('*').eq('incident_id', incident_id).single();
+    let { data: pipeline } = await supabase
+      .from('pipeline_states')
+      .select('*')
+      .eq('incident_id', incident_id)
+      .single();
 
     if (!pipeline) {
       const pipeline_id = `pl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const { data: newPipeline } = await supabase.from('pipeline_states')
-        .insert({ pipeline_id, incident_id, current_step: 'triage', status: 'running' })
-        .select().single();
+      const { data: newPipeline } = await supabase
+        .from('pipeline_states')
+        .insert({ pipeline_id, incident_id, current_step: 'triage', status: 'pending' })
+        .select()
+        .single();
       pipeline = newPipeline;
-      logInfo(FUNCTION, 'Created new pipeline', { pipeline_id, incident_id });
+      logInfo(FUNCTION, 'Created pipeline', { pipeline_id, incident_id });
     }
 
-    if (pipeline.status === 'escalated' || pipeline.status === 'completed') {
-      return new Response(JSON.stringify({ pipeline, message: `Pipeline already ${pipeline.status}` }), { headers: corsHeaders });
+    // Handle status check
+    if (action === 'status') {
+      // Get scan results summary
+      const { data: scans } = await supabase
+        .from('scan_results')
+        .select('agent_stage, status, confidence_score')
+        .eq('incident_id', incident_id);
+
+      return new Response(JSON.stringify({
+        pipeline,
+        scan_summary: scans || [],
+        stage_order: STAGE_ORDER,
+      }), { headers: corsHeaders });
     }
 
-    // Execute current agent step
-    const ctx: PipelineContext = {
-      incident_id, pipeline_id: pipeline.pipeline_id,
-      current_step: pipeline.current_step,
-      step_results: pipeline.step_results || {},
-      confidence: pipeline.confidence || 0,
-    };
-
-    const agentResult = await executeAgent(pipeline.current_step, ctx);
-
-    if (!agentResult.success) {
-      await escalateToHuman(supabase, ctx, `Agent ${pipeline.current_step} failed with confidence ${agentResult.confidence}%`);
-      return new Response(JSON.stringify({ escalated: true, reason: `${pipeline.current_step} failed`, confidence: agentResult.confidence }), { headers: corsHeaders });
+    // Handle retry
+    if (action === 'retry' && stage) {
+      const incident = await getIncident(supabase, incident_id);
+      const result = await runStage(supabase, incident_id, pipeline.pipeline_id, stage, incident.customers?.website);
+      return new Response(JSON.stringify({ retried: true, stage, result }), { headers: corsHeaders });
     }
 
-    // Update pipeline with results
-    const newStepResults = { ...ctx.step_results, [pipeline.current_step]: agentResult.result };
-    const agents = ['triage', 'isolate', 'repair', 'validate', 'deploy', 'audit'];
-    const currentIdx = agents.indexOf(pipeline.current_step as typeof agents[number]);
-    const nextAgent = agents[currentIdx + 1];
+    // Handle approval (for deploy stage)
+    if (action === 'approve') {
+      if (pipeline.status !== 'awaiting_approval') {
+        return new Response(
+          JSON.stringify({ error: 'Pipeline not awaiting approval' }),
+          { status: 400, headers: corsHeaders }
+        );
+      }
+      await updatePipeline(supabase, pipeline.pipeline_id, {
+        status: 'running',
+        current_step: 'deploy',
+        approved_by: user?.id,
+        approved_at: new Date().toISOString(),
+      });
 
-    if (!nextAgent) {
-      // All agents completed
-      await supabase.from('pipeline_states').update({
+      const incident = await getIncident(supabase, incident_id);
+      const result = await runStage(supabase, incident_id, pipeline.pipeline_id, 'deploy', incident.customers?.website);
+
+      if (!result.success) {
+        await escalateToHuman(supabase, incident_id, pipeline.pipeline_id, 'deploy',
+          `Deploy failed: ${result.error || 'unknown'}`);
+        return new Response(JSON.stringify({ escalated: true, stage: 'deploy', result }), { headers: corsHeaders });
+      }
+
+      // Continue to audit
+      const auditResult = await runStage(supabase, incident_id, pipeline.pipeline_id, 'audit', incident.customers?.website);
+
+      // Complete pipeline
+      await updatePipeline(supabase, pipeline.pipeline_id, {
         current_step: 'completed',
         status: 'completed',
-        confidence: agentResult.confidence,
-        step_results: newStepResults,
-        updated_at: new Date().toISOString(),
-      }).eq('pipeline_id', pipeline.pipeline_id);
+        confidence: auditResult.confidence,
+        completed_at: new Date().toISOString(),
+      });
 
       await supabase.from('incidents').update({
         status: 'resolved',
         resolved_at: new Date().toISOString(),
-        ai_confidence: agentResult.confidence,
       }).eq('id', incident_id);
 
-      return new Response(JSON.stringify({ completed: true, confidence: agentResult.confidence }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ completed: true, stage: 'audit', result: auditResult }), { headers: corsHeaders });
     }
 
-    // Check auto-deploy threshold before deploy step
-    const needsApproval = nextAgent === 'deploy' && agentResult.confidence < AUTO_DEPLOY_THRESHOLD;
+    // Determine current stage to run
+    const currentStage = pipeline.current_step as Stage;
+    if (!STAGE_ORDER.includes(currentStage) && currentStage !== 'completed' && currentStage !== 'escalated') {
+      return new Response(
+        JSON.stringify({ error: `Invalid pipeline stage: ${currentStage}` }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
 
-    await supabase.from('pipeline_states').update({
-      current_step: nextAgent,
+    if (currentStage === 'completed' || currentStage === 'escalated') {
+      return new Response(
+        JSON.stringify({ pipeline, message: `Pipeline already ${currentStage}` }),
+        { headers: corsHeaders }
+      );
+    }
+
+    // Get incident data
+    const incident = await getIncident(supabase, incident_id);
+
+    // Run current stage
+    const result = await runStage(supabase, incident_id, pipeline.pipeline_id, currentStage, incident.customers?.website);
+
+    if (!result.success) {
+      await escalateToHuman(supabase, incident_id, pipeline.pipeline_id, currentStage,
+        `Stage ${currentStage} failed: ${result.error || 'unknown'}`);
+      return new Response(
+        JSON.stringify({ escalated: true, stage: currentStage, result }),
+        { headers: corsHeaders }
+      );
+    }
+
+    // Determine next stage
+    const currentIdx = STAGE_ORDER.indexOf(currentStage);
+    const nextStage = STAGE_ORDER[currentIdx + 1];
+
+    if (!nextStage) {
+      // All stages completed
+      await updatePipeline(supabase, pipeline.pipeline_id, {
+        current_step: 'completed',
+        status: 'completed',
+        confidence: result.confidence,
+        completed_at: new Date().toISOString(),
+      });
+
+      await supabase.from('incidents').update({
+        status: 'resolved',
+        resolved_at: new Date().toISOString(),
+      }).eq('id', incident_id);
+
+      return new Response(
+        JSON.stringify({ completed: true, pipeline_id: pipeline.pipeline_id, confidence: result.confidence }),
+        { headers: corsHeaders }
+      );
+    }
+
+    // Check auto-deploy threshold
+    const needsApproval = nextStage === 'deploy' && result.confidence < AUTO_DEPLOY_THRESHOLD;
+
+    await updatePipeline(supabase, pipeline.pipeline_id, {
+      current_step: nextStage,
       status: needsApproval ? 'awaiting_approval' : 'running',
-      confidence: agentResult.confidence,
-      step_results: newStepResults,
-      updated_at: new Date().toISOString(),
-    }).eq('pipeline_id', pipeline.pipeline_id);
+      confidence: result.confidence,
+      step_results: {
+        ...pipeline.step_results,
+        [currentStage]: { completed: true, confidence: result.confidence, scanners: result.scanners_triggered },
+      },
+    });
 
     if (needsApproval) {
-      await supabase.from('notifications').insert({
-        type: 'approval_required',
-        message: `Pipeline ${pipeline.pipeline_id} requires coordinator approval (confidence: ${agentResult.confidence}%)`,
-        entity_type: 'pipeline',
-        entity_id: pipeline.pipeline_id,
-      });
+      await createNotification(supabase, 'approval_required',
+        `Pipeline ${pipeline.pipeline_id} requires approval before deploy (confidence: ${result.confidence}%)`,
+        pipeline.pipeline_id);
     }
 
     return new Response(JSON.stringify({
-      step_completed: pipeline.current_step,
-      next_step: nextAgent,
-      confidence: agentResult.confidence,
+      stage_completed: currentStage,
+      next_stage: nextStage,
+      confidence: result.confidence,
+      scanners_triggered: result.scanners_triggered,
       awaiting_approval: needsApproval,
-      provider: (agentResult.result as Record<string, unknown>)?.provider || 'unknown',
+      pipeline_id: pipeline.pipeline_id,
     }), { headers: corsHeaders });
 
   } catch (err) {
-    logError(FUNCTION, 'Pipeline execution failed', err);
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }), { status: 500, headers: corsHeaders });
+    logError(FUNCTION, 'Orchestrator failed', err);
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
+      { status: 500, headers: corsHeaders }
+    );
   }
 });

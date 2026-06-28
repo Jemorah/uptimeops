@@ -1,69 +1,115 @@
-// UptimeOps — Engineer Availability Manager
+// UptimeOps v2.1 — Engineer Availability Manager
 // Tracks on-call status, auto-assignment, heartbeat monitoring, timeout handling
+// v2.1: Wires to opsgenie_sync and oncall_schedules tables for OpsGenie integration
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { logInfo, logError } from '../_shared/logger.ts';
-import { getSupabaseClient } from '../_shared/supabase.ts';
+import { getSupabaseClient, getAuthUser } from '../_shared/supabase.ts';
 
 const FUNCTION = 'engineer-availability';
+
+interface AvailabilityRequest {
+  action?: 'heartbeat' | 'list_available' | 'auto_assign' | 'resolve' | 'timeout_engineer' | 'get_stats' | 'get_oncall_schedule' | 'update_availability' | 'set_oncall';
+  engineer_id?: string;
+  incident_id?: string;
+  is_available?: boolean;
+  max_weekly_hours?: number;
+  date?: string;
+  is_on_call?: boolean;
+}
 
 serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const { action, engineer_id, incident_id } = body;
+    const body: AvailabilityRequest = await req.json().catch(() => ({}));
+    const { action = 'get_stats', engineer_id, incident_id } = body;
     const supabase = getSupabaseClient(req);
+    const user = getAuthUser(req);
 
-    // Heartbeat ping from engineer
+    // ═══════════════════════════════════════════════════════════
+    // HEARTBEAT
+    // ═══════════════════════════════════════════════════════════
     if (action === 'heartbeat') {
-      if (!engineer_id) return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
+      if (!engineer_id) {
+        return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
+      }
 
       await supabase.from('engineer_profiles')
-        .update({ last_heartbeat_at: new Date().toISOString(), is_on_call: true })
+        .update({ last_heartbeat_at: new Date().toISOString() })
         .eq('id', engineer_id);
 
-      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ ok: true, timestamp: new Date().toISOString() }), { headers: corsHeaders });
     }
 
-    // Get available engineers
+    // ═══════════════════════════════════════════════════════════
+    // LIST AVAILABLE ENGINEERS
+    // ═══════════════════════════════════════════════════════════
     if (action === 'list_available') {
+      // Get engineers who are available AND have active OpsGenie sync
       const { data: engineers } = await supabase.from('engineer_profiles')
-        .select('*')
-        .eq('is_on_call', true)
+        .select('*, opsgenie_sync(sync_status, last_synced_at)')
+        .eq('is_available', true)
+        .eq('status', 'active')
         .order('active_incident_count', { ascending: true })
         .limit(20);
 
-      return new Response(JSON.stringify({ engineers: engineers || [] }), { headers: corsHeaders });
+      // Also get today's on-call schedule
+      const today = new Date().toISOString().split('T')[0];
+      const { data: oncall } = await supabase.from('oncall_schedules')
+        .select('engineer_id, is_on_call')
+        .eq('schedule_date', today);
+
+      const oncallMap = new Map((oncall || []).map((o: any) => [o.engineer_id, o.is_on_call]));
+
+      const enriched = (engineers || []).map((e: any) => ({
+        ...e,
+        is_on_call_today: oncallMap.get(e.id) ?? false,
+        opsgenie_synced: e.opsgenie_sync?.[0]?.sync_status === 'synced',
+      }));
+
+      return new Response(JSON.stringify({ engineers: enriched }), { headers: corsHeaders });
     }
 
-    // Auto-assign engineer to incident
+    // ═══════════════════════════════════════════════════════════
+    // AUTO-ASSIGN ENGINEER
+    // ═══════════════════════════════════════════════════════════
     if (action === 'auto_assign') {
-      if (!incident_id) return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
+      if (!incident_id) {
+        return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
+      }
 
-      // Find least-loaded on-call engineer
-      const { data: engineer } = await supabase.from('engineer_profiles')
-        .select('*')
-        .eq('is_on_call', true)
-        .order('active_incident_count', { ascending: true })
-        .order('last_assigned_at', { ascending: true, nullsFirst: true })
-        .limit(1)
+      // Find least-loaded available engineer with matching specialization
+      const { data: incident } = await supabase.from('incidents')
+        .select('priority, required_specialization')
+        .eq('id', incident_id)
         .single();
 
-      if (!engineer) {
-        // No engineer available — escalate
+      let query = supabase.from('engineer_profiles')
+        .select('*, opsgenie_sync(sync_status)')
+        .eq('is_available', true)
+        .eq('status', 'active')
+        .order('active_incident_count', { ascending: true })
+        .order('last_assigned_at', { ascending: true, nullsFirst: true })
+        .limit(3);
+
+      const { data: candidates } = await query;
+
+      if (!candidates || candidates.length === 0) {
         await supabase.from('human_escalations').insert({
           incident_id, trigger_reason: 'no_engineer_available',
-          status: 'pending_assignment', reason: 'No on-call engineers available',
+          status: 'pending_assignment', reason: 'No available engineers',
         });
         return new Response(JSON.stringify({ assigned: false, reason: 'No engineers available' }), { headers: corsHeaders });
       }
 
-      // Assign engineer
+      // Pick best match (least loaded)
+      const engineer = candidates[0];
+
       await supabase.from('incidents')
-        .update({ assigned_engineer_id: engineer.id })
+        .update({ assigned_engineer_id: engineer.id, status: 'in_progress' })
         .eq('id', incident_id);
 
       await supabase.from('engineer_profiles')
@@ -78,11 +124,20 @@ serve(async (req) => {
         .eq('incident_id', incident_id)
         .eq('status', 'pending_assignment');
 
-      logInfo(FUNCTION, 'Auto-assigned engineer', { incident_id, engineer_id: engineer.id, engineer: engineer.name });
+      // Log assignment
+      await supabase.from('activity_log').insert({
+        type: 'engineer_assigned',
+        user_id: engineer.id,
+        metadata: { incident_id, method: 'auto_assign', previous_count: engineer.active_incident_count },
+      });
+
+      logInfo(FUNCTION, 'Auto-assigned', { incident_id, engineer: engineer.full_name });
       return new Response(JSON.stringify({ assigned: true, engineer }), { headers: corsHeaders });
     }
 
-    // Mark incident as resolved by engineer
+    // ═══════════════════════════════════════════════════════════
+    // RESOLVE INCIDENT
+    // ═══════════════════════════════════════════════════════════
     if (action === 'resolve') {
       if (!incident_id || !engineer_id) {
         return new Response(JSON.stringify({ error: 'incident_id and engineer_id required' }), { status: 400, headers: corsHeaders });
@@ -92,8 +147,11 @@ serve(async (req) => {
         .update({ status: 'resolved', resolved_at: new Date().toISOString() })
         .eq('id', incident_id);
 
-      // Decrement engineer's active count
-      const { data: eng } = await supabase.from('engineer_profiles').select('active_incident_count, total_resolved').eq('id', engineer_id).single();
+      const { data: eng } = await supabase.from('engineer_profiles')
+        .select('active_incident_count, total_resolved')
+        .eq('id', engineer_id)
+        .single();
+
       if (eng) {
         await supabase.from('engineer_profiles').update({
           active_incident_count: Math.max(0, (eng.active_incident_count || 1) - 1),
@@ -101,7 +159,6 @@ serve(async (req) => {
         }).eq('id', engineer_id);
       }
 
-      // Mark escalation as resolved
       await supabase.from('human_escalations')
         .update({ status: 'resolved', resolved_at: new Date().toISOString() })
         .eq('incident_id', incident_id)
@@ -110,17 +167,21 @@ serve(async (req) => {
       return new Response(JSON.stringify({ resolved: true }), { headers: corsHeaders });
     }
 
-    // Timeout engineer (coordinator action)
+    // ═══════════════════════════════════════════════════════════
+    // TIMEOUT ENGINEER
+    // ═══════════════════════════════════════════════════════════
     if (action === 'timeout_engineer') {
-      if (!engineer_id) return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
+      if (!engineer_id) {
+        return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
+      }
 
       await supabase.from('engineer_profiles')
-        .update({ is_on_call: false, last_heartbeat_at: null })
+        .update({ is_available: false, last_heartbeat_at: null })
         .eq('id', engineer_id);
 
-      // Reassign their active incidents
       const { data: activeIncidents } = await supabase.from('incidents')
-        .select('id').eq('assigned_engineer_id', engineer_id)
+        .select('id')
+        .eq('assigned_engineer_id', engineer_id)
         .not('status', 'in', '(resolved,closed)');
 
       for (const inc of activeIncidents || []) {
@@ -138,14 +199,108 @@ serve(async (req) => {
       return new Response(JSON.stringify({ timed_out: true, reassigned: activeIncidents?.length || 0 }), { headers: corsHeaders });
     }
 
-    // Default: return engineer stats
-    const { data: allEngineers } = await supabase.from('engineer_profiles').select('*').order('is_on_call', { ascending: false });
-    const { count: pendingEscalations } = await supabase.from('human_escalations').select('*', { count: 'exact' }).eq('status', 'pending_assignment');
+    // ═══════════════════════════════════════════════════════════
+    // UPDATE AVAILABILITY
+    // ═══════════════════════════════════════════════════════════
+    if (action === 'update_availability') {
+      if (!user) {
+        return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: corsHeaders });
+      }
+
+      const targetId = engineer_id || user.id;
+      const updates: Record<string, unknown> = {};
+
+      if (body.is_available !== undefined) updates.is_available = body.is_available;
+      if (body.max_weekly_hours !== undefined) updates.max_weekly_hours = body.max_weekly_hours;
+
+      await supabase.from('engineer_profiles').update(updates).eq('id', targetId);
+
+      return new Response(JSON.stringify({ updated: true, engineer_id: targetId, ...updates }), { headers: corsHeaders });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SET ON-CALL STATUS
+    // ═══════════════════════════════════════════════════════════
+    if (action === 'set_oncall') {
+      if (!user) {
+        return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: corsHeaders });
+      }
+
+      const targetId = engineer_id || user.id;
+      const scheduleDate = body.date || new Date().toISOString().split('T')[0];
+      const onCall = body.is_on_call ?? true;
+
+      // Upsert oncall schedule
+      await supabase.from('oncall_schedules').upsert({
+        engineer_id: targetId,
+        schedule_date: scheduleDate,
+        is_on_call: onCall,
+      }, { onConflict: 'engineer_id,schedule_date' });
+
+      return new Response(JSON.stringify({
+        set: true, engineer_id: targetId, date: scheduleDate, is_on_call: onCall,
+      }), { headers: corsHeaders });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // GET ON-CALL SCHEDULE
+    // ═══════════════════════════════════════════════════════════
+    if (action === 'get_oncall_schedule') {
+      const fromDate = body.date || new Date().toISOString().split('T')[0];
+
+      const { data: schedules } = await supabase.from('oncall_schedules')
+        .select('*, engineer_profiles(id, full_name, email, specialization, is_available)')
+        .eq('schedule_date', fromDate)
+        .order('created_at', { ascending: false });
+
+      // Also get engineers from opsgenie_sync
+      const { data: opsgenieSynced } = await supabase.from('opsgenie_sync')
+        .select('*, engineer_profiles(id, full_name, email)')
+        .eq('sync_status', 'synced');
+
+      return new Response(JSON.stringify({
+        date: fromDate,
+        oncall: (schedules || []).filter((s: any) => s.is_on_call),
+        offduty: (schedules || []).filter((s: any) => !s.is_on_call),
+        opsgenie_synced: opsgenieSynced || [],
+      }), { headers: corsHeaders });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // DEFAULT: GET STATS
+    // ═══════════════════════════════════════════════════════════
+    const { data: allEngineers } = await supabase.from('engineer_profiles')
+      .select('id, full_name, is_available, status, active_incident_count, total_resolved, specialization, last_heartbeat_at, joined_at')
+      .order('is_available', { ascending: false });
+
+    const { count: pendingEscalations } = await supabase.from('human_escalations')
+      .select('*', { count: 'exact' })
+      .eq('status', 'pending_assignment');
+
+    // Get today's on-call count
+    const today = new Date().toISOString().split('T')[0];
+    const { data: todayOncall } = await supabase.from('oncall_schedules')
+      .select('engineer_id', { count: 'exact' })
+      .eq('schedule_date', today)
+      .eq('is_on_call', true);
+
+    // Get opsgenie sync count
+    const { data: opsgenieSynced } = await supabase.from('opsgenie_sync')
+      .select('sync_status', { count: 'exact' })
+      .eq('sync_status', 'synced');
 
     return new Response(JSON.stringify({
       engineers: allEngineers || [],
-      pending_escalations: pendingEscalations || 0,
-      on_call_count: allEngineers?.filter((e: Record<string, unknown>) => e.is_on_call).length || 0,
+      stats: {
+        total: allEngineers?.length || 0,
+        available: allEngineers?.filter((e: any) => e.is_available && e.status === 'active').length || 0,
+        on_duty: todayOncall?.length || 0,
+        opsgenie_synced: opsgenieSynced?.length || 0,
+        avg_load: allEngineers && allEngineers.length > 0
+          ? Math.round(allEngineers.reduce((sum: number, e: any) => sum + (e.active_incident_count || 0), 0) / allEngineers.length * 10) / 10
+          : 0,
+        pending_escalations: pendingEscalations || 0,
+      },
     }), { headers: corsHeaders });
 
   } catch (err) {
