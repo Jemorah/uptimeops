@@ -136,7 +136,8 @@ serve(async (req) => {
         totalConfidence += output.confidence;
         if (!output.deployment_ready) allBlockers.push(...output.blockers);
 
-      } catch (err) {;
+      } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 20;
       }
@@ -154,13 +155,16 @@ serve(async (req) => {
       status: deploymentReady ? 'approved' : 'blocked',
     }, { onConflict: 'incident_id,pipeline_id' });
 
+    logInfo(FUNCTION, 'Deploy validation complete', { incident_id, deployment_ready: deploymentReady, confidence: avgConfidence });
     return new Response(JSON.stringify({
       success: true, stage: 'deploy', confidence: avgConfidence,
       deployment_ready: deploymentReady, blockers: uniqueBlockers.length,
       scanners_run: scanEntries.length, pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Deploy validation failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

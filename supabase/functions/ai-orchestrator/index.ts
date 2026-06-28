@@ -101,7 +101,8 @@ async function invokeStageFunction(
       stage,
       confidence: result.confidence || 0,
     };
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
     return {
       success: false,
       scanners_triggered: scan_ids.length,
@@ -346,7 +347,8 @@ serve(async (req) => {
         resolved_at: new Date().toISOString(),
       }).eq('id', incident_id);
 
-      return new Response(
+      logInfo(FUNCTION, 'Pipeline completed', { pipeline_id: pipeline.pipeline_id, confidence: result.confidence });
+    return new Response(
         JSON.stringify({ completed: true, pipeline_id: pipeline.pipeline_id, confidence: result.confidence }),
         { headers: corsHeaders }
       );
@@ -380,7 +382,8 @@ serve(async (req) => {
       pipeline_id: pipeline.pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

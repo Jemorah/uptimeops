@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // MARKETING ROUTER — www.uptimeops.org
-// Public pages only. No auth callback. Admin bypass on all portals.
+// Public pages + centralized login/signup/auth callback.
 // ═══════════════════════════════════════════════════════════════
 
 import { lazy, Suspense } from 'react';
@@ -15,6 +15,7 @@ const LoginPage      = lazy(() => import('@/pages/public/LoginPage').then(m => (
 const SignupPage     = lazy(() => import('@/pages/public/SignupPage').then(m => ({ default: m.SignupPage })));
 const ForgotPassword = lazy(() => import('@/pages/public/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
 const ResetPassword  = lazy(() => import('@/pages/public/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const AuthCallback   = lazy(() => import('@/pages/public/AuthCallbackPage').then(m => ({ default: m.AuthCallbackPage })));
 const EngineerOnboard = lazy(() => import('@/pages/engineer/EngineerOnboarding').then(m => ({ default: m.EngineerOnboarding })));
 
 const FixDashboard  = lazy(() => import('@/pages/temporary/FixDashboard').then(m => ({ default: m.FixDashboard })));
@@ -33,6 +34,7 @@ export function MarketingRouter() {
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/engineer/onboard" element={<EngineerOnboard />} />
         <Route path="/fix/:ticketId" element={<FixDashboard />} />
         <Route path="/fix-log" element={<FixLog />} />

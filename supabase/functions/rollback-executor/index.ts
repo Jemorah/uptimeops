@@ -9,6 +9,7 @@ import { getSupabaseClient } from '../_shared/supabase.ts';
 const FUNCTION = 'rollback-executor';
 
 serve(async (req) => {
+  logInfo(FUNCTION, 'Request received');
   const cors = handleCors(req);
   if (cors) return cors;
 
@@ -98,7 +99,8 @@ serve(async (req) => {
       escalated: true,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Request failed\', err);;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

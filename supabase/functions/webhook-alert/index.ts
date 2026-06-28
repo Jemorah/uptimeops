@@ -119,7 +119,8 @@ serve(async (req) => {
       customer_id: customerId,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

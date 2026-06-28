@@ -4,6 +4,10 @@
 // NO MOCK DATA. If no provider is configured, returns error.
 // ═══════════════════════════════════════════════════════════════
 
+import { logInfo, logError } from './logger.ts';
+
+const FUNCTION = 'ai-client';
+
 interface AIResponse {
   content: string;
   model: string;
@@ -31,7 +35,10 @@ async function callAnthropic(prompt: string, systemPrompt?: string): Promise<AIR
       }),
     });
 
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      logError(FUNCTION, `Anthropic API error: ${resp.status}`, await resp.text());
+      return null;
+    }
 
     const data = await resp.json();
     return {
@@ -40,7 +47,8 @@ async function callAnthropic(prompt: string, systemPrompt?: string): Promise<AIR
       provider: 'anthropic',
       usage: data.usage,
     };
-  } catch {
+  } catch (e) {
+    logError(FUNCTION, 'Anthropic call failed', e);
     return null;
   }
 }
@@ -66,7 +74,10 @@ async function callOpenAI(prompt: string, systemPrompt?: string): Promise<AIResp
       }),
     });
 
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      logError(FUNCTION, `OpenAI API error: ${resp.status}`, await resp.text());
+      return null;
+    }
 
     const data = await resp.json();
     return {
@@ -78,18 +89,27 @@ async function callOpenAI(prompt: string, systemPrompt?: string): Promise<AIResp
         output_tokens: data.usage?.completion_tokens || 0,
       },
     };
-  } catch {
+  } catch (e) {
+    logError(FUNCTION, 'OpenAI call failed', e);
     return null;
   }
 }
 
 export async function callAI(prompt: string, systemPrompt?: string): Promise<AIResponse> {
+  logInfo(FUNCTION, 'Calling AI', { prompt_length: prompt.length });
   const anthropicResult = await callAnthropic(prompt, systemPrompt);
-  if (anthropicResult) return anthropicResult;
+  if (anthropicResult) {
+    logInfo(FUNCTION, 'Anthropic success', { model: anthropicResult.model, tokens: anthropicResult.usage });
+    return anthropicResult;
+  }
 
   const openaiResult = await callOpenAI(prompt, systemPrompt);
-  if (openaiResult) return openaiResult;
+  if (openaiResult) {
+    logInfo(FUNCTION, 'OpenAI fallback success', { model: openaiResult.model });
+    return openaiResult;
+  }
 
+  logError(FUNCTION, 'No AI provider available');
   throw new Error(
     'No AI provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Supabase Edge Function Secrets.'
   );

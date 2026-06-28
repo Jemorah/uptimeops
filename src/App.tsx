@@ -1,26 +1,58 @@
 // ═══════════════════════════════════════════════════════════════
-// UptimeOps v2.1 — Multi-Subdomain App Router (ADMIN BYPASS)
-// ONE build, ONE deployment. All portals accessible without auth.
-// Admin role on all subdomains. No login required.
+// UptimeOps v2.1 — Multi-Subdomain App Router
+// ONE build, ONE deployment. Runtime hostname detection.
+// Admin (cumouat@gmail.com) can access all subdomains.
 // ═══════════════════════════════════════════════════════════════
 
-import { AuthProvider } from '@/hooks/useAuth';
+import { useEffect } from 'react';
+import { AuthProvider, useAuth, getLoginUrl } from '@/hooks/useAuth';
 import { getCurrentPortal } from '@/lib/supabase/client';
 import { MarketingRouter } from '@/routers/MarketingRouter';
 import { CustomerRouter } from '@/routers/CustomerRouter';
 import { HQRouter } from '@/routers/HQRouter';
 import { EngineerRouter } from '@/routers/EngineerRouter';
+import { Loader2, Zap } from 'lucide-react';
+
+function PortalGate({ portal, children }: { portal: string; children: React.ReactNode }) {
+  const { isAuthenticated, isLoading, role } = useAuth();
+
+  useEffect(() => {
+    if (portal === 'www') return;
+    if (isLoading) return;
+    // Admin can access all portals — no redirect needed
+    if (role === 'admin') return;
+    if (!isAuthenticated) {
+      window.location.href = getLoginUrl(window.location.href);
+    }
+  }, [portal, isAuthenticated, isLoading, role]);
+
+  if (portal !== 'www' && isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="flex items-center gap-2 justify-center">
+            <Zap className="w-5 h-5 text-[#a3e635] animate-pulse" />
+            <span className="text-sm font-black tracking-tight text-white/60">UPTIME<span className="text-[#a3e635]">OPS</span></span>
+          </div>
+          <Loader2 className="w-6 h-6 text-[#a3e635] animate-spin mx-auto" />
+          <p className="text-xs text-white/40 font-mono uppercase tracking-wider">Verifying session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
 
 function AppInner() {
   const portal = getCurrentPortal();
-
   return (
-    <>
+    <PortalGate portal={portal}>
       {portal === 'app' && <CustomerRouter />}
       {portal === 'dashboard' && <HQRouter />}
       {portal === 'engineers' && <EngineerRouter />}
       {portal === 'www' && <MarketingRouter />}
-    </>
+    </PortalGate>
   );
 }
 

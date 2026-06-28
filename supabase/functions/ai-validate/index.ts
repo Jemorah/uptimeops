@@ -139,7 +139,8 @@ serve(async (req) => {
         totalConfidence += output.confidence;
         allTestResults.push(...output.test_results);
 
-      } catch (err) {;
+      } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 15;
       }
@@ -155,13 +156,16 @@ serve(async (req) => {
       status: avgConfidence >= 80 ? 'passed' : avgConfidence >= 60 ? 'partial' : 'failed',
     }, { onConflict: 'incident_id,pipeline_id' });
 
+    logInfo(FUNCTION, 'Validation complete', { incident_id, tests_passed: testsPassed, confidence: avgConfidence });
     return new Response(JSON.stringify({
       success: true, stage: 'validate', confidence: avgConfidence,
       tests_run: allTestResults.length, tests_passed: testsPassed,
       scanners_run: scanEntries.length, pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Validation failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

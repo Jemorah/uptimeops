@@ -385,6 +385,7 @@ serve(async (req) => {
       generated_at: new Date().toISOString(),
     }, { onConflict: 'incident_id,pipeline_id' });
 
+    logInfo(FUNCTION, 'Audit complete', { incident_id, blocks, avg_confidence: avgConfidence, root_hash: rootHash.slice(0,16) });
     return new Response(JSON.stringify({
       success: true,
       stage: 'audit',
@@ -395,7 +396,9 @@ serve(async (req) => {
       pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Audit failed', err);
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

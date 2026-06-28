@@ -1,11 +1,15 @@
 // Shared Supabase client for Edge Functions
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { logError } from './logger.ts';
+
+const FUNCTION = 'supabase-client';
 
 export function getSupabaseClient(req?: Request) {
   const url = Deno.env.get('SUPABASE_URL');
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!url || !key) {
+    logError(FUNCTION, 'Missing Supabase credentials');
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
   }
 

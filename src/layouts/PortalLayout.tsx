@@ -134,7 +134,7 @@ export function PortalLayout({ portalType }: PortalLayoutProps) {
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
           <button
-            onClick={async () => { await signOut(); }}
+            onClick={async () => { await signOut(); navigate('/'); }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all"
           >
             <LogOut className="w-4 h-4 shrink-0" />

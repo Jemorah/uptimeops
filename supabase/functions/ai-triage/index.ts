@@ -182,6 +182,7 @@ serve(async (req) => {
     const avgConfidence = Math.round(totalConfidence / scanEntries.length);
     const allPassed = results.every(r => r.passed);
 
+    logInfo(FUNCTION, 'Triage complete', { incident_id, avg_confidence: avgConfidence, scanners: scanEntries.length });
     return new Response(JSON.stringify({
       success: true,
       stage: 'triage',
@@ -192,7 +193,8 @@ serve(async (req) => {
       pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

@@ -9,6 +9,7 @@ import { getSupabaseClient, getAuthUser } from '../_shared/supabase.ts';
 const FUNCTION = 'credential-decrypt';
 
 serve(async (req) => {
+  logInfo(FUNCTION, 'Request received');
   const cors = handleCors(req);
   if (cors) return cors;
 
@@ -70,7 +71,8 @@ serve(async (req) => {
       expires_at: cred.expires_at,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Request failed\', err);;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

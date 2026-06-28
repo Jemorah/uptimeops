@@ -142,7 +142,8 @@ serve(async (req) => {
         totalConfidence += output.confidence;
         allFixes.push(...output.fixes_applied);
 
-      } catch (err) {;
+      } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 10;
       }
@@ -159,12 +160,15 @@ serve(async (req) => {
       status: avgConfidence >= 75 ? 'ready' : 'needs_review',
     }, { onConflict: 'incident_id,pipeline_id' });
 
+    logInfo(FUNCTION, 'Repair complete', { incident_id, fixes_found: uniqueFixes.length, confidence: avgConfidence });
     return new Response(JSON.stringify({
       success: true, stage: 'repair', confidence: avgConfidence,
       fixes_found: uniqueFixes.length, scanners_run: scanEntries.length, pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Repair failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

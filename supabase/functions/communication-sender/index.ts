@@ -48,6 +48,7 @@ async function createNotification(supabase: any, payload: CommPayload) {
 }
 
 serve(async (req) => {
+  logInfo(FUNCTION, 'Request received');
   const cors = handleCors(req);
   if (cors) return cors;
 
@@ -100,7 +101,8 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ sent: true, results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  } catch (err) {;
+  } catch (err) {
+    logError(FUNCTION, \'Request failed\', err);;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });
