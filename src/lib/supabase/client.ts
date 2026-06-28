@@ -2,6 +2,11 @@
 // SUPABASE CLIENT — UptimeOps Multi-Subdomain
 // Cookie-based session storage for cross-domain auth sharing.
 // Cookie domain: .uptimeops.org (readable by www, app, dashboard, engineers)
+//
+// MODE DETECTION:
+//   - Subdomain mode: when hostname matches *.uptimeops.org
+//   - Single-domain mode: Vercel, localhost, or any other host
+//     In single-domain mode, portals are determined by URL path.
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@supabase/supabase-js';
@@ -13,10 +18,8 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // ── Subdomain detection ──
 function getRootDomain(): string {
   const host = typeof window !== 'undefined' ? window.location.hostname : '';
-  // Production: extract the root domain (e.g., uptimeops.org from app.uptimeops.org)
   if (host.endsWith('uptimeops.org')) return '.uptimeops.org';
   if (host.endsWith('uptimeops.com')) return '.uptimeops.com';
-  // Vercel preview deployments or localhost
   if (host.includes('vercel.app') || host === 'localhost') return host;
   return host;
 }
@@ -46,34 +49,26 @@ function getCookie(name: string): string | null {
 
 function deleteCookie(name: string) {
   const domain = getRootDomain();
-  // Delete by setting past expiry on all domain variants
   document.cookie = `${name}=;path=/;domain=${domain};expires=Thu, 01 Jan 1970 00:00:00 GMT`;
   document.cookie = `${name}=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
 // ── Cookie-based storage adapter for Supabase auth ──
-// Replaces localStorage so the session cookie is shared across subdomains.
 const COOKIE_KEY = 'sb-session';
 
 const cookieStorage: Storage = {
-  get length() {
-    return getCookie(COOKIE_KEY) ? 1 : 0;
-  },
-  key() {
-    return COOKIE_KEY;
-  },
+  get length() { return getCookie(COOKIE_KEY) ? 1 : 0; },
+  key() { return COOKIE_KEY; },
   getItem(key: string): string | null {
-    // Supabase stores session under sb-<project-ref>-auth-token
     if (key.includes('auth-token')) return getCookie(COOKIE_KEY);
     return getCookie(key) || null;
   },
   setItem(key: string, value: string): void {
     if (key.includes('auth-token')) {
-      // Session expiry from JWT — parse and set cookie max-age
       try {
         const parsed = JSON.parse(value);
         const expiresAt = parsed?.expires_at;
-        const maxAge = expiresAt ? Math.floor(expiresAt - Date.now() / 1000) : 604800; // default 7 days
+        const maxAge = expiresAt ? Math.floor(expiresAt - Date.now() / 1000) : 604800;
         setCookie(COOKIE_KEY, value, { maxAge });
       } catch {
         setCookie(COOKIE_KEY, value, { maxAge: 604800 });
@@ -105,7 +100,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 export type UserRole = 'public' | 'customer' | 'engineer' | 'coordinator' | 'admin';
 
-// Subdomain → portal mapping
+// ── Subdomain config ──
 export const SUBDOMAINS = {
   www: 'www.uptimeops.org',
   app: 'app.uptimeops.org',
@@ -113,7 +108,27 @@ export const SUBDOMAINS = {
   engineers: 'engineers.uptimeops.org',
 } as const;
 
-// Role → subdomain mapping
+// ── Mode detection ──
+// Returns true ONLY when running on a configured *.uptimeops.org subdomain.
+// Returns false for Vercel preview, localhost, or any other host.
+export function isSubdomainMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host.endsWith('uptimeops.org') && !host.includes('vercel.app');
+}
+
+// ── Is this the login domain (www or root)? ──
+export function isWwwDomain(): boolean {
+  if (typeof window === 'undefined') return true;
+  const host = window.location.hostname;
+  return host === 'localhost'
+    || host === '127.0.0.1'
+    || host === 'www.uptimeops.org'
+    || host === 'uptimeops.org'
+    || host.includes('vercel.app'); // Vercel deployments use /login as entry point
+}
+
+// ── Role → subdomain mapping ──
 export function getSubdomainForRole(role: UserRole): string {
   switch (role) {
     case 'customer': return SUBDOMAINS.app;
@@ -124,16 +139,40 @@ export function getSubdomainForRole(role: UserRole): string {
   }
 }
 
-// Get current hostname portal
+// ── Role → client-side path mapping (single-domain mode) ──
+export function getPortalPathForRole(role: UserRole): string {
+  switch (role) {
+    case 'customer': return '/customer';
+    case 'coordinator': return '/hq';
+    case 'admin': return '/hq'; // Admin defaults to HQ portal
+    case 'engineer': return '/engineer';
+    default: return '/';
+  }
+}
+
+// ── Get current portal ──
+// In subdomain mode: uses hostname.
+// In single-domain mode: uses URL path.
 export function getCurrentPortal(): 'www' | 'app' | 'dashboard' | 'engineers' {
   if (typeof window === 'undefined') return 'www';
+
+  // Subdomain mode: check hostname prefix
   const host = window.location.hostname;
   if (host.startsWith('app.')) return 'app';
   if (host.startsWith('dashboard.')) return 'dashboard';
   if (host.startsWith('engineers.')) return 'engineers';
+
+  // Single-domain mode: check URL path (hash router path after #)
+  const hash = window.location.hash;
+  if (hash.startsWith('#/customer')) return 'app';
+  if (hash.startsWith('#/hq')) return 'dashboard';
+  if (hash.startsWith('#/engineer')) return 'engineers';
+
+  // Default to www (marketing pages)
   return 'www';
 }
 
+// ── Get user role from database ──
 export async function getUserRole(userId: string): Promise<UserRole> {
   const { data, error } = await supabase
     .from('user_roles')
@@ -144,7 +183,7 @@ export async function getUserRole(userId: string): Promise<UserRole> {
   return (data.role as UserRole) || 'customer';
 }
 
-// Hardcoded admin — used by both frontend and Edge Functions
+// Hardcoded admin
 export const ADMIN_EMAIL = 'cumouat@gmail.com';
 export function isAdminEmail(email: string | undefined | null): boolean {
   return !!email && email.toLowerCase() === ADMIN_EMAIL.toLowerCase();

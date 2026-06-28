@@ -1,12 +1,19 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CONTEXT — UptimeOps Multi-Subdomain
-// Cookie-based cross-domain auth with role-based subdomain redirect.
+// Cookie-based cross-domain auth with role-based redirect.
 // cumouat@gmail.com gets admin role on all subdomains.
+//
+// TWO MODES:
+//   1. Subdomain mode (*.uptimeops.org) → window.location.href cross-domain
+//   2. Single-domain mode (Vercel, etc)  → client-side navigate() within same domain
 // ═══════════════════════════════════════════════════════════════
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { User, AuthError, Provider } from '@supabase/supabase-js';
-import { supabase, getUserRole, getSubdomainForRole, getCurrentPortal, SUBDOMAINS, isAdminEmail } from '@/lib/supabase/client';
+import {
+  supabase, getUserRole, getSubdomainForRole, getPortalPathForRole,
+  getCurrentPortal, SUBDOMAINS, isAdminEmail, isSubdomainMode, isWwwDomain,
+} from '@/lib/supabase/client';
 import type { UserRole } from '@/lib/supabase/client';
 
 interface AuthState {
@@ -33,56 +40,75 @@ const AuthContext = createContext<AuthContextType>({
 
 const PROVIDER_NAMES: Record<string, string> = { google: 'Google', github: 'GitHub', email: 'Email' };
 
-// ── Admin override: cumouat@gmail.com gets admin on all subdomains ──
+// ── Admin override ──
 function applyAdminOverride(user: User | null, role: UserRole): UserRole {
   if (isAdminEmail(user?.email)) return 'admin';
   return role;
 }
 
-// ── Is current page on www (the login domain)? ──
-function isWwwDomain(): boolean {
-  if (typeof window === 'undefined') return true;
-  const host = window.location.hostname;
-  return host === 'localhost' || host === '127.0.0.1' || host === 'www.uptimeops.org' || host === 'uptimeops.org';
-}
-
-// ── Build login URL on www with redirect back ──
+// ── Build login URL ──
 export function getLoginUrl(currentPath?: string): string {
   const redirectTo = currentPath || (typeof window !== 'undefined' ? window.location.href : '');
-  const base = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? `${window.location.origin}` : `https://${SUBDOMAINS.www}`;
+  // In single-domain mode, just navigate to /#/login with redirect_to param
+  if (!isSubdomainMode()) {
+    return `/#/login?redirect_to=${encodeURIComponent(redirectTo)}`;
+  }
+  // In subdomain mode, go to www subdomain
+  const base = isLocalhost() ? `${window.location.origin}` : `https://${SUBDOMAINS.www}`;
   return `${base}/#/login?redirect_to=${encodeURIComponent(redirectTo)}`;
 }
 
-// ── Redirect to role's subdomain ──
-export function redirectToRoleSubdomain(role: UserRole, fallbackRedirect?: string | null) {
+function isLocalhost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1';
+}
+
+// ── Post-login redirect ──
+// Returns the URL/ path the user should go to after login.
+// The caller uses this with either navigate() or window.location.href.
+export function getPostLoginDestination(role: UserRole, fallbackRedirect?: string | null): string {
   const allowedDomains = Object.values(SUBDOMAINS);
   const isAllowed = fallbackRedirect && allowedDomains.some(d => fallbackRedirect.includes(d));
 
-  // Admin: use redirect_to if provided, otherwise go to app.uptimeops.org
-  if (role === 'admin') {
-    if (isAllowed && fallbackRedirect) {
-      window.location.href = fallbackRedirect;
-    } else {
-      const base = typeof window !== 'undefined' && (window.location.hostname === 'localhost')
-        ? `${window.location.origin}/#` : `https://${SUBDOMAINS.app}`;
-      window.location.href = `${base}/`;
-    }
-    return;
+  // If there's a valid redirect_to, use it
+  if (isAllowed && fallbackRedirect) return fallbackRedirect;
+
+  // Single-domain mode: return a client-side path
+  if (!isSubdomainMode()) {
+    return getPortalPathForRole(role);
   }
 
-  // Non-admin: use redirect_to if provided
-  if (isAllowed && fallbackRedirect) { window.location.href = fallbackRedirect; return; }
+  // Subdomain mode: return full URL
+  if (role === 'admin' || role === 'coordinator') {
+    return `https://${SUBDOMAINS.dashboard}/#/hq`;
+  }
+  if (role === 'engineer') {
+    return `https://${SUBDOMAINS.engineers}/#/engineer`;
+  }
+  if (role === 'customer') {
+    return `https://${SUBDOMAINS.app}/#/customer`;
+  }
+  return '/';
+}
 
-  // Non-admin: redirect to their role's subdomain
-  const domain = getSubdomainForRole(role);
-  const base = typeof window !== 'undefined' && (window.location.hostname === 'localhost')
-    ? `${window.location.origin}/#` : `https://${domain}/#`;
-  window.location.href = `${base}/`;
+// ── Legacy redirect function (used by AuthCallbackPage) ──
+export function redirectToRoleSubdomain(role: UserRole, fallbackRedirect?: string | null) {
+  const dest = getPostLoginDestination(role, fallbackRedirect);
+  if (!isSubdomainMode()) {
+    // Single-domain: client-side hash-based navigation
+    window.location.hash = dest;
+    window.location.reload();
+  } else {
+    // Subdomain mode: full page redirect
+    window.location.href = dest;
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({ user: null, role: 'public', isLoading: true, isAuthenticated: false });
+  const [state, setState] = useState<AuthState>({
+    user: null, role: 'public', isLoading: true, isAuthenticated: false,
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -91,14 +117,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mounted) return;
       if (session?.user) {
         if (isAdminEmail(session.user.email)) {
-          if (mounted) setState({ user: session.user, role: 'admin', isLoading: false, isAuthenticated: true });
+          setState({ user: session.user, role: 'admin', isLoading: false, isAuthenticated: true });
           return;
         }
         let role = await getUserRole(session.user.id);
         role = applyAdminOverride(session.user, role);
-        if (mounted) setState({ user: session.user, role, isLoading: false, isAuthenticated: true });
+        setState({ user: session.user, role, isLoading: false, isAuthenticated: true });
       } else {
-        if (mounted) setState(s => ({ ...s, isLoading: false }));
+        setState(s => ({ ...s, isLoading: false }));
       }
     }
     init();
@@ -106,16 +132,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mounted) return;
       const user = session?.user ?? null;
       if (user) {
-        // Admin email bypass — skip DB role lookup
         if (isAdminEmail(user.email)) {
-          if (mounted) setState({ user, role: 'admin', isLoading: false, isAuthenticated: true });
+          setState({ user, role: 'admin', isLoading: false, isAuthenticated: true });
           return;
         }
         let role = await getUserRole(user.id);
         role = applyAdminOverride(user, role);
-        if (mounted) setState({ user, role, isLoading: false, isAuthenticated: true });
+        setState({ user, role, isLoading: false, isAuthenticated: true });
       } else {
-        if (mounted) setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+        setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
       }
     });
     return () => { mounted = false; subscription.unsubscribe(); };
@@ -130,19 +155,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         else if (error.message.includes('Email not confirmed')) friendly = 'Please confirm your email before signing in.';
         return { error: { ...error, message: friendly } as AuthError };
       }
-      if (!data.session?.user) return { error: { message: 'No session.', name: 'AuthError', status: 400 } as AuthError };
+      if (!data.session?.user) {
+        return { error: { message: 'No session.', name: 'AuthError', status: 400 } as AuthError };
+      }
 
-      // Admin email bypass — skip DB role lookup
+      // Admin email bypass
       if (isAdminEmail(data.session.user.email)) {
         setState({ user: data.session.user, role: 'admin', isLoading: false, isAuthenticated: true });
-        if (isWwwDomain()) redirectToRoleSubdomain('admin', new URLSearchParams(window.location.search).get('redirect_to'));
         return { error: null, role: 'admin' as UserRole };
       }
 
       let role = await getUserRole(data.session.user.id);
       role = applyAdminOverride(data.session.user, role);
       setState({ user: data.session.user, role, isLoading: false, isAuthenticated: true });
-      if (isWwwDomain()) redirectToRoleSubdomain(role, new URLSearchParams(window.location.search).get('redirect_to'));
       return { error: null, role };
     } catch (err: any) {
       return { error: { message: err?.message || 'Error.', name: 'AuthError', status: 500 } as AuthError };
@@ -152,13 +177,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(async (email: string, password: string, metadata?: { full_name?: string }) => {
     try {
       const redirectBase = isWwwDomain() ? `${window.location.origin}` : `https://${SUBDOMAINS.www}`;
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: metadata || {}, emailRedirectTo: `${redirectBase}/#/login` } });
+      const { data, error } = await supabase.auth.signUp({
+        email, password,
+        options: { data: metadata || {}, emailRedirectTo: `${redirectBase}/#/login` },
+      });
       if (error) return { error };
       if (data.session?.user) {
         let role = await getUserRole(data.session.user.id);
         role = applyAdminOverride(data.session.user, role);
         setState({ user: data.session.user, role, isLoading: false, isAuthenticated: true });
-        if (isWwwDomain()) { const rd = new URLSearchParams(window.location.search).get('redirect_to'); redirectToRoleSubdomain(role, rd); }
         return { error: null, role };
       }
       return { error: null };
@@ -187,8 +214,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
-    const logoutBase = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-      ? `${window.location.origin}` : `https://${SUBDOMAINS.www}`;
+    const logoutBase = isSubdomainMode()
+      ? `https://${SUBDOMAINS.www}`
+      : `${window.location.origin}`;
     window.location.href = `${logoutBase}/#/login?signed_out=true`;
   }, []);
 
@@ -198,7 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${base}/#/reset-password` });
       return { error };
     } catch (err: any) {
-      return { error: { message: err?.message || 'Failed to send reset email.', name: 'AuthError', status: 500 } as AuthError };
+      return { error: { message: err?.message || 'Failed.', name: 'AuthError', status: 500 } as AuthError };
     }
   }, []);
 
@@ -219,14 +247,14 @@ export function useRequireAuth(allowedRoles?: UserRole[]) {
   return { authorized: true, checking: false };
 }
 
-// ── Check if user is on wrong subdomain ──
-// Admin users can access ALL subdomains — no redirect
+// ── Subdomain check for non-admin users ──
 export function useWrongSubdomainCheck() {
   const { isAuthenticated, role, isLoading } = useAuth();
 
   useEffect(() => {
     if (isLoading || !isAuthenticated || !role || role === 'public') return;
-    if (role === 'admin') return; // Admin can access all subdomains
+    if (role === 'admin') return; // Admin can access all
+    if (!isSubdomainMode()) return; // Only enforce in subdomain mode
 
     const currentPortal = getCurrentPortal();
     const correctDomain = getSubdomainForRole(role);

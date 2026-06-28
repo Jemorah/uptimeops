@@ -1,11 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // LOGIN PAGE — UptimeOps
 // Email/Password + GitHub OAuth + Google OAuth
+// Handles single-domain (Vercel) and multi-subdomain modes.
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth, redirectToRoleSubdomain } from '@/hooks/useAuth';
+import { useAuth, getPostLoginDestination } from '@/hooks/useAuth';
+import { isSubdomainMode } from '@/lib/supabase/client';
 import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +16,7 @@ import { toast } from 'sonner';
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { signIn, signUp, signInWithOAuth, role } = useAuth();
+  const { signIn, signUp, signInWithOAuth } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -23,7 +25,8 @@ export function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const redirectPath = searchParams.get('redirect') || '';
+  // The redirect parameter set by getLoginUrl() is "redirect_to"
+  const redirectPath = searchParams.get('redirect_to') || '';
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,30 +35,44 @@ export function LoginPage() {
 
     try {
       if (mode === 'signin') {
-        const { error } = await signIn(email, password);
-        if (error) {
-          setError(error.message);
-          toast.error(error.message);
-        } else {
+        // signIn returns { error, role } — use the returned role, NOT the stale closure
+        const { error: signInError, role: returnedRole } = await signIn(email, password);
+
+        if (signInError) {
+          setError(signInError.message);
+          toast.error(signInError.message);
+        } else if (returnedRole && returnedRole !== 'public') {
           toast.success('Signed in successfully');
+
+          // Redirect based on mode
           if (redirectPath) {
+            // User came from a protected page — take them back
             navigate(redirectPath);
-          } else if (role && role !== 'public') {
-            redirectToRoleSubdomain(role, null);
+          } else if (!isSubdomainMode()) {
+            // Single-domain mode: client-side navigation to the right portal
+            const dest = getPostLoginDestination(returnedRole, null);
+            navigate(dest);
           }
+          // In subdomain mode, signIn() doesn't redirect — caller handles it
         }
       } else {
+        // Sign up mode
         if (!fullName.trim()) {
           setError('Full name is required');
           setIsLoading(false);
           return;
         }
-        const { error } = await signUp(email, password, { full_name: fullName });
-        if (error) {
-          setError(error.message);
-          toast.error(error.message);
+        const { error: signUpError, role: returnedRole } = await signUp(email, password, { full_name: fullName });
+        if (signUpError) {
+          setError(signUpError.message);
+          toast.error(signUpError.message);
+        } else if (returnedRole && returnedRole !== 'public') {
+          toast.success('Account created!');
+          if (!isSubdomainMode()) {
+            navigate(getPostLoginDestination(returnedRole, null));
+          }
         } else {
-          toast.success('Account created! Check your email for confirmation.');
+          toast.success('Check your email for confirmation.');
           setMode('signin');
         }
       }

@@ -1,10 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CALLBACK — Handles OAuth redirect from GitHub/Google
+// Works in both single-domain and subdomain modes.
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, redirectToRoleSubdomain } from '@/hooks/useAuth';
+import { useAuth, getPostLoginDestination } from '@/hooks/useAuth';
+import { isSubdomainMode } from '@/lib/supabase/client';
 import { Loader2, Zap } from 'lucide-react';
 
 export function AuthCallbackPage() {
@@ -12,15 +14,19 @@ export function AuthCallbackPage() {
   const { isAuthenticated, isLoading, role } = useAuth();
 
   useEffect(() => {
-    // After onAuthStateChange fires, the auth context will have
-    // isAuthenticated=true and the correct role. We just wait for it.
     if (isLoading) return;
 
     if (isAuthenticated && role && role !== 'public') {
-      // Auth state is ready — redirect to role's subdomain
-      redirectToRoleSubdomain(role, null);
+      if (!isSubdomainMode()) {
+        // Single-domain: client-side navigation
+        const dest = getPostLoginDestination(role, null);
+        navigate(dest, { replace: true });
+      } else {
+        // Subdomain mode: full page redirect
+        window.location.href = getPostLoginDestination(role, null);
+      }
     } else {
-      // Auth failed
+      // Auth failed or still loading
       console.error('[Auth Callback] Not authenticated after callback');
       navigate('/login?error=auth_failed', { replace: true });
     }

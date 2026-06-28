@@ -8,16 +8,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, getPostLoginDestination } from '@/hooks/useAuth';
+import { isSubdomainMode } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 
 export function SignupPage() {
   const navigate = useNavigate();
-  const { signUp, isAuthenticated } = useAuth();
+  const { signUp, isAuthenticated, role } = useAuth();
 
   // Redirect if already logged in
-  if (isAuthenticated) {
-    navigate('/customer', { replace: true });
+  if (isAuthenticated && role && role !== 'public') {
+    if (!isSubdomainMode()) {
+      navigate(getPostLoginDestination(role, null), { replace: true });
+    }
     return null;
   }
 
@@ -40,11 +43,19 @@ export function SignupPage() {
     }
 
     setIsLoading(true);
-    const { error } = await signUp(email, password, { full_name: fullName });
+    const { error, role: returnedRole } = await signUp(email, password, { full_name: fullName });
     setIsLoading(false);
 
     if (error) {
       toast.error(error.message);
+    } else if (returnedRole && returnedRole !== 'public') {
+      // Auto-redirect if session was created immediately
+      if (!isSubdomainMode()) {
+        navigate(getPostLoginDestination(returnedRole, null));
+        return;
+      }
+      setConfirmed(true);
+      toast.success('Account created! Check your email for confirmation.');
     } else {
       setConfirmed(true);
       toast.success('Account created! Check your email for confirmation.');
