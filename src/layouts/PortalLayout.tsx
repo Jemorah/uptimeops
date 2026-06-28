@@ -10,7 +10,8 @@ import {
   LayoutDashboard, AlertTriangle, CreditCard, Shield,
   MessageSquare, Settings, LogOut, Zap, Terminal,
   Users, BarChart3, CheckSquare, ClipboardList,
-  Radio, ChevronLeft, ChevronRight
+  Radio, ChevronLeft, ChevronRight, ScanLine,
+  FileCode2, ShieldCheck
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -27,6 +28,7 @@ const NAV_CONFIG: Record<string, NavItem[]> = {
     { label: 'Billing', path: '/customer/billing', icon: CreditCard },
     { label: 'Vault', path: '/customer/vault', icon: Shield },
     { label: 'Messages', path: '/customer/comms', icon: MessageSquare },
+    { label: 'Security', path: '/customer/security', icon: ShieldCheck },
     { label: 'Settings', path: '/customer/settings', icon: Settings },
   ],
   engineer: [
@@ -35,6 +37,7 @@ const NAV_CONFIG: Record<string, NavItem[]> = {
     { label: 'Terminal', path: '/engineer/workspace/default', icon: Terminal },
     { label: 'Credentials', path: '/engineer/audit', icon: Shield },
     { label: 'On-Call', path: '/engineer/oncall', icon: Radio },
+    { label: 'Security', path: '/engineer/security', icon: ScanLine },
     { label: 'Settings', path: '/engineer/settings', icon: Settings },
   ],
   coordinator: [
@@ -46,6 +49,8 @@ const NAV_CONFIG: Record<string, NavItem[]> = {
     { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList },
     { label: 'Comms', path: '/hq/communications', icon: MessageSquare },
     { label: 'Gap Seal', path: '/hq/gap-seal', icon: Shield },
+    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine },
+    { label: 'Guidelines', path: '/hq/guidelines', icon: FileCode2 },
     { label: 'Settings', path: '/hq/settings', icon: Settings },
   ],
   admin: [
@@ -57,6 +62,8 @@ const NAV_CONFIG: Record<string, NavItem[]> = {
     { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList },
     { label: 'Comms', path: '/hq/communications', icon: MessageSquare },
     { label: 'Gap Seal', path: '/hq/gap-seal', icon: Shield },
+    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine },
+    { label: 'Guidelines', path: '/hq/guidelines', icon: FileCode2 },
     { label: 'Settings', path: '/hq/settings', icon: Settings },
   ],
 };

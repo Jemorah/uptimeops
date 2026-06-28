@@ -32,6 +32,7 @@ const CustomerBilling = lazy(() => import('@/pages/customer/CustomerBilling').th
 const CustomerSettings = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
 const CustomerVault = lazy(() => import('@/pages/customer/CustomerVault').then(m => ({ default: m.CustomerVault })));
 const CustomerComms = lazy(() => import('@/pages/customer/CustomerComms').then(m => ({ default: m.CustomerComms })));
+const CustomerSecurity = lazy(() => import('@/pages/customer/CustomerSecurity').then(m => ({ default: m.CustomerSecurity })));
 
 // Temporary fix portal
 const FixDashboard = lazy(() => import('@/pages/temporary/FixDashboard').then(m => ({ default: m.FixDashboard })));
@@ -46,6 +47,8 @@ const EngineerSessions = lazy(() => import('@/pages/engineer/EngineerSessions').
 const EngineerOnCall = lazy(() => import('@/pages/engineer/EngineerOnCall').then(m => ({ default: m.EngineerOnCall })));
 const EngineerAudit = lazy(() => import('@/pages/engineer/EngineerAudit').then(m => ({ default: m.EngineerAudit })));
 const EngineerSettings = lazy(() => import('@/pages/engineer/EngineerSettings').then(m => ({ default: m.EngineerSettings })));
+const EngineerSecurity = lazy(() => import('@/pages/engineer/EngineerSecurity').then(m => ({ default: m.EngineerSecurity })));
+const EngineerOnboarding = lazy(() => import('@/pages/engineer/EngineerOnboarding').then(m => ({ default: m.EngineerOnboarding })));
 
 // HQ Control Center
 const HQDashboard = lazy(() => import('@/pages/hq/HQDashboard').then(m => ({ default: m.HQDashboard })));
@@ -56,6 +59,8 @@ const HQSettings = lazy(() => import('@/pages/hq/HQSettings').then(m => ({ defau
 const HQApprovals = lazy(() => import('@/pages/hq/HQApprovals').then(m => ({ default: m.HQApprovals })));
 const HQCommunications = lazy(() => import('@/pages/hq/HQCommunications').then(m => ({ default: m.HQCommunications })));
 const GapSealAudit = lazy(() => import('@/pages/hq/GapSealAudit').then(m => ({ default: m.GapSealAudit })));
+const HQScanners = lazy(() => import('@/pages/hq/HQScanners').then(m => ({ default: m.HQScanners })));
+const HQGuidelines = lazy(() => import('@/pages/hq/HQGuidelines').then(m => ({ default: m.HQGuidelines })));
 
 // System pages
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
@@ -172,6 +177,7 @@ export default function App() {
           <Route path="/customer/vault" element={<CustomerRoute><CustomerVault /></CustomerRoute>} />
           <Route path="/customer/settings" element={<CustomerRoute><CustomerSettings /></CustomerRoute>} />
           <Route path="/customer/comms" element={<CustomerRoute><CustomerComms /></CustomerRoute>} />
+          <Route path="/customer/security" element={<CustomerRoute><CustomerSecurity /></CustomerRoute>} />
 
           {/* ═══════════════════════════════════════════
               TEMPORARY FIX PORTAL — Public, token-based
@@ -202,6 +208,8 @@ export default function App() {
           <Route path="/engineer/settings" element={<EngineerRoute><EngineerSettings /></EngineerRoute>} />
           <Route path="/engineer/workspace/:incidentId" element={<EngineerRoute><EngineerWorkspace /></EngineerRoute>} />
           <Route path="/engineer/incident/:incidentId" element={<EngineerRoute><IncidentWorkspace /></EngineerRoute>} />
+          <Route path="/engineer/security" element={<EngineerRoute><EngineerSecurity /></EngineerRoute>} />
+          <Route path="/engineer/onboard" element={<EngineerOnboarding />} />
 
           {/* ═══════════════════════════════════════════
               HQ CONTROL CENTER — coordinator/admin only
@@ -214,6 +222,8 @@ export default function App() {
           <Route path="/hq/approvals" element={<HQRoute><HQApprovals /></HQRoute>} />
           <Route path="/hq/communications" element={<HQRoute><HQCommunications /></HQRoute>} />
           <Route path="/hq/gap-seal" element={<HQRoute><GapSealAudit /></HQRoute>} />
+          <Route path="/hq/scanners" element={<HQRoute><HQScanners /></HQRoute>} />
+          <Route path="/hq/guidelines" element={<HQRoute><HQGuidelines /></HQRoute>} />
 
           {/* ═══════════════════════════════════════════
               SYSTEM PAGES

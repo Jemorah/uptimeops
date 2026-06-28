@@ -122,10 +122,11 @@ export function LandingPage() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-12 max-w-2xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6 pt-12 max-w-3xl mx-auto">
             {[
               { value: '< 2h', label: 'Avg Fix Time' },
               { value: '99.7%', label: 'Success Rate' },
+              { value: '42', label: 'Security Scanners' },
               { value: '6 AI Agents', label: 'Pipeline' },
               { value: '24/7', label: 'Coverage' },
             ].map(s => (
@@ -257,7 +258,7 @@ export function LandingPage() {
               { icon: Radio, title: 'Real-Time Monitoring', desc: 'Sub-minute detection with synthetic checks, log analysis, and anomaly detection across your stack.' },
               { icon: Lock, title: 'Zero-Knowledge Vault', desc: 'AES-256-GCM client-side encryption. We literally cannot read your credentials.' },
               { icon: BarChart3, title: 'Full Audit Trail', desc: 'SHA-256 hashed logs of every action. Export for SOC 2, ISO 27001, HIPAA compliance.' },
-              { icon: Shield, title: 'Sandboxed Repairs', desc: 'All fixes are developed and tested in isolated VMs before touching production.' },
+              { icon: Shield, title: '42-Scanner Validation', desc: 'Every fix passes through 42 security scanners across 6 categories before deployment.' },
               { icon: Zap, title: 'Auto-Rollback', desc: 'If a deployment fails health checks, we automatically roll back to the last known good state.' },
             ].map(f => (
               <div key={f.title} className="border border-white/10 rounded-xl p-5 bg-white/[0.02] hover:border-white/20 transition-all space-y-3">

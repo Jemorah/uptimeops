@@ -453,6 +453,7 @@ export function PricingPage() {
             { icon: Sparkles, label: 'ISO 27001' },
             { icon: TrendingUp, label: '99.9% Uptime SLA' },
             { icon: Gauge, label: '< 60s Response' },
+            { icon: Shield, label: '42-Scanner Security' },
           ].map((badge) => (
             <div key={badge.label} className="flex items-center gap-1.5 text-white/20">
               <badge.icon className="w-3.5 h-3.5" />
@@ -508,7 +509,7 @@ export function PricingPage() {
                 className="px-6 py-3 bg-lime/10 border border-lime/30 text-lime text-sm font-bold uppercase tracking-wider hover:bg-lime/20 transition-colors"
               >
                 <Shield className="w-4 h-4 inline mr-2 -mt-0.5" />
-                Start Free Trial
+                Get Started
               </Link>
             </div>
           </div>

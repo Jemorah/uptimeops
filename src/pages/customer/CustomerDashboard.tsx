@@ -8,10 +8,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
 import { PLANS } from '@/lib/constants';
+import { useSecurityScore } from '@/hooks/useSecurityScore';
+import { SecurityScoreCard } from '@/components/security/SecurityScoreCard';
 import {
   AlertTriangle, CheckCircle, Clock, Shield, Zap, ArrowRight,
   Loader2, Activity, FileCheck, Lock, Radio, TrendingUp,
-  Server, ChevronRight, Eye
+  Server, ChevronRight, Eye, ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -26,13 +28,16 @@ export function CustomerDashboard() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([]);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { score: securityScore } = useSecurityScore(null, customerId);
 
   useEffect(() => {
     async function load() {
       if (!user) return;
       const { data: customer } = await supabase.from('customers').select('id').eq('user_id', user.id).maybeSingle();
       if (!customer) { setLoading(false); return; }
+      setCustomerId(customer.id);
 
       // Incidents
       const { data: incs } = await supabase.from('incidents').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false }).limit(10);
@@ -179,6 +184,32 @@ export function CustomerDashboard() {
 
         {/* Right Column — Subscription & Quick Info */}
         <div className="space-y-6">
+          {/* Security Score */}
+          {securityScore > 0 && (
+            <div className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#a3e635]" /> Security Score
+                </h3>
+              </div>
+              <SecurityScoreCard score={securityScore} size="md" />
+            </div>
+          )}
+
+          {/* No active plan banner */}
+          {!subscription || subscription.status !== 'active' ? (
+            <div className="border border-amber-500/20 rounded-xl p-4 bg-amber-500/5">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-amber-400">No Active Protection</span>
+              </div>
+              <p className="text-[11px] text-white/40 mb-3">Subscribe to get 42-scanner security coverage.</p>
+              <button onClick={() => navigate('/customer/billing')} className="w-full px-3 py-2 bg-amber-500/10 text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-500/20 transition-all">
+                View Plans
+              </button>
+            </div>
+          ) : null}
+
           {/* Subscription Status */}
           <div className="border border-lime/15 rounded-xl p-5 bg-lime/[0.015]">
             <div className="flex items-center gap-3 mb-4">
