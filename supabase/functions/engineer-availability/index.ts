@@ -4,7 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { logInfo, logError } from '../_shared/logger.ts';
+import { logInfo, logError, logWarn } from '../_shared/logger.ts';
 import { getSupabaseClient, getAuthUser } from '../_shared/supabase.ts';
 
 const FUNCTION = 'engineer-availability';
@@ -230,12 +230,28 @@ serve(async (req) => {
       const scheduleDate = body.date || new Date().toISOString().split('T')[0];
       const onCall = body.is_on_call ?? true;
 
-      // Upsert oncall schedule
+      // Upsert local oncall schedule
       await supabase.from('oncall_schedules').upsert({
         engineer_id: targetId,
         schedule_date: scheduleDate,
         is_on_call: onCall,
       }, { onConflict: 'engineer_id,schedule_date' });
+
+      // Push to OpsGenie
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (supabaseUrl && serviceKey) {
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/opsgenie-sync`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set_oncall', engineer_id: targetId, date: scheduleDate, is_on_call: onCall }),
+          });
+        } catch (err) {
+          logWarn(FUNCTION, 'OpsGenie sync failed for set_oncall', { error: err instanceof Error ? err.message : String(err) });
+          // Continue — local schedule is already updated
+        }
+      }
 
       return new Response(JSON.stringify({
         set: true, engineer_id: targetId, date: scheduleDate, is_on_call: onCall,

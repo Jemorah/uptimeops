@@ -1,253 +1,175 @@
 // UptimeOps v2.1 — OpsGenie Sync
 // Syncs engineer on-call schedules with Atlassian OpsGenie
-// Fetches schedules, syncs on-call status, handles overrides
+// Requires OPSGENIE_API_KEY in Edge Function Secrets
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { logInfo, logError } from '../_shared/logger.ts';
+import { logInfo, logError, logWarn } from '../_shared/logger.ts';
 import { getSupabaseClient, getAuthUser } from '../_shared/supabase.ts';
 
 const FUNCTION = 'opsgenie-sync';
 const OPSGENIE_API_BASE = 'https://api.opsgenie.com/v2';
 
 interface OpsGenieRequest {
-  action: 'sync_schedules' | 'get_oncall' | 'sync_engineer' | 'list_schedules';
+  action: 'sync_schedules' | 'get_oncall' | 'sync_engineer' | 'list_schedules' | 'set_oncall' | 'create_alert';
   engineer_id?: string;
   schedule_id?: string;
   date_from?: string;
   date_to?: string;
+  is_on_call?: boolean;
+  date?: string;
+  alert_payload?: {
+    message: string;
+    alias?: string;
+    description?: string;
+    responders?: Array<{ id: string; type: string }>;
+    priority?: 'P1' | 'P2' | 'P3' | 'P4';
+  };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// OPSGENIE API CLIENT
-// ═══════════════════════════════════════════════════════════════
+// ── OPSGENIE API CLIENT ─────────────────────────────────────
 
-function getOpsGenieHeaders() {
+function getOpsGenieHeaders(): Record<string, string> {
   const apiKey = Deno.env.get('OPSGENIE_API_KEY');
+  if (!apiKey) throw new Error('OPSGENIE_API_KEY not configured');
   return {
-    'Authorization': `GenieKey ${apiKey}`,
+    Authorization: `GenieKey ${apiKey}`,
     'Content-Type': 'application/json',
   };
 }
 
-async function opsgenieFetch(path: string, options: RequestInit = {}) {
-  const apiKey = Deno.env.get('OPSGENIE_API_KEY');
-  if (!apiKey) {
-    logWarn(FUNCTION, 'OPSGENIE_API_KEY not configured, using mock data');
-    return null;
+async function opsgenieFetch(path: string, options: RequestInit = {}): Promise<any> {
+  const resp = await fetch(`${OPSGENIE_API_BASE}${path}`, {
+    ...options,
+    headers: { ...getOpsGenieHeaders(), ...(options.headers || {}) },
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`OpsGenie API ${resp.status}: ${err}`);
   }
 
-  try {
-    const resp = await fetch(`${OPSGENIE_API_BASE}${path}`, {
-      ...options,
-      headers: { ...getOpsGenieHeaders(), ...options.headers },
-    });
+  // 204 No Content
+  if (resp.status === 204) return { success: true };
 
-    if (!resp.ok) {
-      const err = await resp.text();
-      logError(FUNCTION, `OpsGenie API error ${resp.status}`, err);
-      return null;
-    }
-
-    return await resp.json();
-  } catch (e) {
-    logError(FUNCTION, 'OpsGenie API call failed', e);
-    return null;
-  }
+  return await resp.json();
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SYNC ALL SCHEDULES
-// ═══════════════════════════════════════════════════════════════
+// ── OPSGENIE OPERATIONS ─────────────────────────────────────
 
-async function syncSchedules(supabase: any, dateFrom?: string, dateTo?: string): Promise<{
-  synced: number;
-  schedules: any[];
-}> {
-  const fromDate = dateFrom || new Date().toISOString().split('T')[0];
-  const toDate = dateTo || fromDate;
+async function listOpsGenieSchedules(): Promise<any[]> {
+  const data = await opsgenieFetch('/schedules');
+  return (data?.data || []).map((s: any) => ({ id: s.id, name: s.name, timezone: s.timezone, enabled: s.enabled }));
+}
 
-  // Try OpsGenie API
-  const schedulesData = await opsgenieFetch('/schedules');
+async function getScheduleTimeline(scheduleId: string, date: string): Promise<any[]> {
+  const data = await opsgenieFetch(`/schedules/${scheduleId}/timeline?date=${date}`);
+  const rotations = data?.timeline?.rotations || [];
+  const participants: any[] = [];
 
-  if (!schedulesData) {
-    // Fallback: generate from existing opsgenie_sync records
-    logInfo(FUNCTION, 'Using local sync data');
-    const { data: syncRecords } = await supabase.from('opsgenie_sync').select('*, engineer_profiles(*)');
-
-    return {
-      synced: syncRecords?.length || 0,
-      schedules: (syncRecords || []).map((r: any) => ({
-        engineer_id: r.engineer_id,
-        engineer_name: r.engineer_profiles?.full_name || 'Unknown',
-        schedule_id: r.schedule_id,
-        status: r.sync_status,
-      })),
-    };
-  }
-
-  // Process OpsGenie schedules
-  const synced: any[] = [];
-  const schedules = schedulesData.data || [];
-
-  for (const schedule of schedules) {
-    // Get on-call participants for this schedule
-    const timelineData = await opsgenieFetch(
-      `/schedules/${schedule.id}/timeline?date=${fromDate}`
-    );
-
-    const rotations = timelineData?.timeline?.rotations || [];
-
-    for (const rotation of rotations) {
-      for (const period of rotation.periods || []) {
-        const recipient = period.recipient;
-        if (!recipient?.id) continue;
-
-        // Upsert sync record
-        await supabase.from('opsgenie_sync').upsert({
-          engineer_id: recipient.id,
+  for (const rotation of rotations) {
+    for (const period of rotation.periods || []) {
+      const recipient = period.recipient;
+      if (recipient?.id) {
+        participants.push({
           opsgenie_user_id: recipient.id,
           opsgenie_username: recipient.username || recipient.name,
-          schedule_id: schedule.id,
-          last_synced_at: new Date().toISOString(),
-          sync_status: 'synced',
-        }, { onConflict: 'engineer_id' });
-
-        synced.push({
-          engineer_id: recipient.id,
-          schedule_id: schedule.id,
-          schedule_name: schedule.name,
+          schedule_id: scheduleId,
+          schedule_name: data?.timeline?.name,
           from: period.startTime,
           to: period.endTime,
+          type: recipient.type,
         });
       }
     }
   }
-
-  return { synced: synced.length, schedules: synced };
+  return participants;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// GET CURRENT ON-CALL ENGINEER
-// ═══════════════════════════════════════════════════════════════
+async function getOnCallParticipants(scheduleId?: string): Promise<any[]> {
+  const path = scheduleId ? `/schedules/${scheduleId}/on-calls` : '/schedules/on-calls';
+  const data = await opsgenieFetch(path);
 
-async function getOnCall(supabase: any, scheduleId?: string): Promise<{
-  oncall: any[];
-}> {
-  if (scheduleId) {
-    const data = await opsgenieFetch(`/schedules/${scheduleId}/on-calls`);
-    if (data?.data?.onCallParticipants) {
-      return { oncall: data.data.onCallParticipants };
-    }
+  if (scheduleId && data?.data?.onCallParticipants) {
+    return data.data.onCallParticipants;
   }
-
-  // Get all on-call
-  const data = await opsgenieFetch('/schedules/on-calls');
-  if (data?.data) {
-    return { oncall: data.data };
-  }
-
-  // Fallback: check local oncall_schedules table
-  const today = new Date().toISOString().split('T')[0];
-  const { data: localOnCall } = await supabase
-    .from('oncall_schedules')
-    .select('*, engineer_profiles(id, full_name, email, specialization)')
-    .eq('schedule_date', today)
-    .eq('is_on_call', true);
-
-  return {
-    oncall: (localOnCall || []).map((r: any) => ({
-      id: r.engineer_id,
-      name: r.engineer_profiles?.full_name || 'Unknown',
-      email: r.engineer_profiles?.email,
-      specialization: r.engineer_profiles?.specialization || [],
-      schedule_date: r.schedule_date,
-    })),
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// SYNC SINGLE ENGINEER
-// ═══════════════════════════════════════════════════════════════
-
-async function syncEngineer(supabase: any, engineerId: string): Promise<{
-  synced: boolean;
-  opsgenie_user_id?: string;
-}> {
-  // Get engineer profile
-  const { data: profile } = await supabase
-    .from('engineer_profiles')
-    .select('*')
-    .eq('id', engineerId)
-    .single();
-
-  if (!profile) {
-    return { synced: false };
-  }
-
-  // Try to find/create in OpsGenie
-  const userData = await opsgenieFetch(`/users/${profile.email}`);
-
-  if (userData?.data) {
-    // User exists in OpsGenie
-    await supabase.from('opsgenie_sync').upsert({
-      engineer_id: engineerId,
-      opsgenie_user_id: userData.data.id,
-      opsgenie_username: userData.data.username || profile.email,
-      last_synced_at: new Date().toISOString(),
-      sync_status: 'synced',
-    }, { onConflict: 'engineer_id' });
-
-    return { synced: true, opsgenie_user_id: userData.data.id };
-  }
-
-  // Create in OpsGenie
-  const createResult = await opsgenieFetch('/users', {
-    method: 'POST',
-    body: JSON.stringify({
-      username: profile.email,
-      fullName: profile.full_name,
-      role: 'User',
-      timezone: profile.timezone || 'America/New_York',
-    }),
-  });
-
-  if (createResult?.data) {
-    await supabase.from('opsgenie_sync').upsert({
-      engineer_id: engineerId,
-      opsgenie_user_id: createResult.data.id,
-      opsgenie_username: profile.email,
-      last_synced_at: new Date().toISOString(),
-      sync_status: 'synced',
-    }, { onConflict: 'engineer_id' });
-
-    return { synced: true, opsgenie_user_id: createResult.data.id };
-  }
-
-  // Mark as pending if OpsGenie not available
-  await supabase.from('opsgenie_sync').upsert({
-    engineer_id: engineerId,
-    sync_status: 'pending',
-  }, { onConflict: 'engineer_id' });
-
-  return { synced: false };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// LIST SCHEDULES
-// ═══════════════════════════════════════════════════════════════
-
-async function listSchedules(): Promise<any[]> {
-  const data = await opsgenieFetch('/schedules');
-  if (data?.data) {
-    return data.data.map((s: any) => ({ id: s.id, name: s.name, timezone: s.timezone }));
-  }
+  if (data?.data) return data.data;
   return [];
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MAIN HANDLER
-// ═══════════════════════════════════════════════════════════════
+async function getOpsGenieUser(email: string): Promise<any | null> {
+  try {
+    return await opsgenieFetch(`/users/${email}`);
+  } catch {
+    return null;
+  }
+}
+
+async function createOpsGenieUser(email: string, fullName: string, timezone: string): Promise<any> {
+  return await opsgenieFetch('/users', {
+    method: 'POST',
+    body: JSON.stringify({
+      username: email,
+      fullName,
+      role: 'User',
+      timezone: timezone || 'America/New_York',
+    }),
+  });
+}
+
+async function createOpsGenieAlert(payload: OpsGenieRequest['alert_payload']): Promise<any> {
+  if (!payload) throw new Error('alert_payload required');
+  return await opsgenieFetch('/alerts', {
+    method: 'POST',
+    body: JSON.stringify({
+      message: payload.message,
+      alias: payload.alias || `uptimeops-${Date.now()}`,
+      description: payload.description || '',
+      responders: payload.responders || [],
+      priority: payload.priority || 'P3',
+      source: 'UptimeOps',
+    }),
+  });
+}
+
+// ── SUPABASE SYNC OPERATIONS ─────────────────────────────────
+
+async function persistScheduleSync(supabase: any, participants: any[]): Promise<number> {
+  let synced = 0;
+  for (const p of participants) {
+    // Find engineer by email (opsgenie_username is email)
+    const { data: profile } = await supabase
+      .from('engineer_profiles')
+      .select('id')
+      .eq('email', p.opsgenie_username)
+      .maybeSingle();
+
+    if (profile) {
+      await supabase.from('opsgenie_sync').upsert({
+        engineer_id: profile.id,
+        opsgenie_user_id: p.opsgenie_user_id,
+        opsgenie_username: p.opsgenie_username,
+        schedule_id: p.schedule_id,
+        last_synced_at: new Date().toISOString(),
+        sync_status: 'synced',
+      }, { onConflict: 'engineer_id' });
+
+      // Update oncall_schedules
+      const scheduleDate = p.from ? p.from.split('T')[0] : new Date().toISOString().split('T')[0];
+      await supabase.from('oncall_schedules').upsert({
+        engineer_id: profile.id,
+        schedule_date: scheduleDate,
+        is_on_call: true,
+        opsgenie_schedule_id: p.schedule_id,
+      }, { onConflict: 'engineer_id,schedule_date' });
+
+      synced++;
+    }
+  }
+  return synced;
+}
+
+// ── MAIN HANDLER ─────────────────────────────────────────────
 
 serve(async (req) => {
   const cors = handleCors(req);
@@ -264,14 +186,12 @@ serve(async (req) => {
     const supabase = getSupabaseClient(req);
     const user = getAuthUser(req);
 
-    // Auth check for admin actions
-    const adminActions = ['sync_schedules', 'sync_engineer'];
+    // ── Auth check for admin actions ──
+    const adminActions = ['sync_schedules', 'sync_engineer', 'set_oncall', 'create_alert'];
     if (adminActions.includes(action)) {
       if (!user) {
         return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: corsHeaders });
       }
-
-      // Check admin/coordinator role
       const { data: roleData } = await supabase
         .from('user_roles')
         .select('role')
@@ -283,28 +203,143 @@ serve(async (req) => {
       }
     }
 
+    // ── Verify OpsGenie key is configured ──
+    if (!Deno.env.get('OPSGENIE_API_KEY')) {
+      return new Response(
+        JSON.stringify({ error: 'OPSGENIE_API_KEY not configured. Add it in Supabase Dashboard > Edge Functions > Secrets.' }),
+        { status: 503, headers: corsHeaders }
+      );
+    }
+
     switch (action) {
       case 'sync_schedules': {
-        const result = await syncSchedules(supabase, body.date_from, body.date_to);
-        return new Response(JSON.stringify(result), { headers: corsHeaders });
+        const schedules = await listOpsGenieSchedules();
+        const fromDate = body.date_from || new Date().toISOString().split('T')[0];
+
+        let totalSynced = 0;
+        const allParticipants: any[] = [];
+
+        for (const schedule of schedules) {
+          if (!schedule.enabled) continue;
+          const participants = await getScheduleTimeline(schedule.id, fromDate);
+          const synced = await persistScheduleSync(supabase, participants);
+          totalSynced += synced;
+          allParticipants.push(...participants);
+        }
+
+        logInfo(FUNCTION, `Synced ${totalSynced} engineers from ${schedules.length} schedules`);
+        return new Response(JSON.stringify({
+          synced: totalSynced,
+          schedules_found: schedules.length,
+          participants: allParticipants,
+        }), { headers: corsHeaders });
       }
 
       case 'get_oncall': {
-        const result = await getOnCall(supabase, body.schedule_id);
-        return new Response(JSON.stringify(result), { headers: corsHeaders });
+        const participants = await getOnCallParticipants(body.schedule_id);
+        return new Response(JSON.stringify({
+          oncall: participants,
+          count: participants.length,
+          source: 'opsgenie',
+        }), { headers: corsHeaders });
       }
 
       case 'sync_engineer': {
         if (!body.engineer_id) {
           return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
         }
-        const result = await syncEngineer(supabase, body.engineer_id);
-        return new Response(JSON.stringify(result), { headers: corsHeaders });
+
+        const { data: profile } = await supabase
+          .from('engineer_profiles')
+          .select('*')
+          .eq('id', body.engineer_id)
+          .single();
+
+        if (!profile) {
+          return new Response(JSON.stringify({ error: 'Engineer not found' }), { status: 404, headers: corsHeaders });
+        }
+
+        // Check if user exists in OpsGenie
+        let userData = await getOpsGenieUser(profile.email);
+
+        if (!userData) {
+          // Create user in OpsGenie
+          logInfo(FUNCTION, `Creating OpsGenie user for ${profile.email}`);
+          userData = await createOpsGenieUser(profile.email, profile.full_name, profile.timezone);
+        }
+
+        if (userData?.data) {
+          await supabase.from('opsgenie_sync').upsert({
+            engineer_id: body.engineer_id,
+            opsgenie_user_id: userData.data.id,
+            opsgenie_username: userData.data.username || profile.email,
+            last_synced_at: new Date().toISOString(),
+            sync_status: 'synced',
+          }, { onConflict: 'engineer_id' });
+
+          return new Response(JSON.stringify({
+            synced: true,
+            opsgenie_user_id: userData.data.id,
+            created: !userData.data.id, // Was the user just created?
+          }), { headers: corsHeaders });
+        }
+
+        return new Response(JSON.stringify({ synced: false, error: 'Failed to sync with OpsGenie' }), { status: 502, headers: corsHeaders });
       }
 
       case 'list_schedules': {
-        const schedules = await listSchedules();
-        return new Response(JSON.stringify({ schedules }), { headers: corsHeaders });
+        const schedules = await listOpsGenieSchedules();
+        return new Response(JSON.stringify({ schedules, count: schedules.length }), { headers: corsHeaders });
+      }
+
+      case 'set_oncall': {
+        if (!body.engineer_id) {
+          return new Response(JSON.stringify({ error: 'engineer_id required' }), { status: 400, headers: corsHeaders });
+        }
+
+        // Get engineer profile
+        const { data: profile } = await supabase
+          .from('engineer_profiles')
+          .select('email, full_name, timezone')
+          .eq('id', body.engineer_id)
+          .single();
+
+        if (!profile) {
+          return new Response(JSON.stringify({ error: 'Engineer not found' }), { status: 404, headers: corsHeaders });
+        }
+
+        // Ensure user exists in OpsGenie
+        let userData = await getOpsGenieUser(profile.email);
+        if (!userData) {
+          userData = await createOpsGenieUser(profile.email, profile.full_name, profile.timezone);
+        }
+
+        // Update local oncall_schedules
+        const scheduleDate = body.date || new Date().toISOString().split('T')[0];
+        await supabase.from('oncall_schedules').upsert({
+          engineer_id: body.engineer_id,
+          schedule_date: scheduleDate,
+          is_on_call: body.is_on_call ?? true,
+        }, { onConflict: 'engineer_id,schedule_date' });
+
+        logInfo(FUNCTION, `Set on-call status`, { engineer_id: body.engineer_id, date: scheduleDate, on_call: body.is_on_call });
+
+        return new Response(JSON.stringify({
+          set: true,
+          engineer_id: body.engineer_id,
+          date: scheduleDate,
+          is_on_call: body.is_on_call ?? true,
+          opsgenie_user_id: userData?.data?.id || null,
+        }), { headers: corsHeaders });
+      }
+
+      case 'create_alert': {
+        if (!body.alert_payload) {
+          return new Response(JSON.stringify({ error: 'alert_payload required' }), { status: 400, headers: corsHeaders });
+        }
+        const result = await createOpsGenieAlert(body.alert_payload);
+        logInfo(FUNCTION, `Alert created`, { alias: body.alert_payload.alias });
+        return new Response(JSON.stringify({ created: true, alert: result.data || result }), { headers: corsHeaders });
       }
 
       default:
@@ -312,12 +347,15 @@ serve(async (req) => {
     }
 
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const isConfigError = message.includes('OPSGENIE_API_KEY not configured');
     logError(FUNCTION, 'OpsGenie sync failed', err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
-      { status: 500, headers: corsHeaders }
+      JSON.stringify({
+        error: message,
+        hint: isConfigError ? 'Add OPSGENIE_API_KEY in Supabase Dashboard > Edge Functions > Secrets' : undefined,
+      }),
+      { status: isConfigError ? 503 : 500, headers: corsHeaders }
     );
   }
 });
-
-import { logWarn } from '../_shared/logger.ts';
