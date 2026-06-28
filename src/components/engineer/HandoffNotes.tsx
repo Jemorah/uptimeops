@@ -24,11 +24,8 @@ export function HandoffNotes({ incidentId }: HandoffNotesProps) {
 
   const handleSubmit = () => {
     if (!newNote.trim()) return;
-    addHandoffNote(incidentId, {
-      author: noteType === 'engineer' ? 'Alex Chen' : 'Coordinator Sarah',
-      authorRole: noteType,
-      content: newNote.trim(),
-    });
+    const author = noteType === 'engineer' ? 'Alex Chen' : 'Coordinator Sarah';
+    addHandoffNote(incidentId, newNote.trim(), author, noteType);
     setNewNote('');
     setShowAddForm(false);
   };

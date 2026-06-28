@@ -89,7 +89,13 @@ export function CustomerComms() {
       <div>
         {activeTab === 'overview' && (
           <div className="grid lg:grid-cols-2 gap-6">
-            <PreferenceSettings preferences={comms.preferences} onUpdate={comms.updatePreferences} />
+            {comms.preferences ? (
+              <PreferenceSettings preferences={comms.preferences} onUpdate={comms.updatePreferences} />
+            ) : (
+              <div className="bg-surface border border-white/5 p-6 text-center">
+                <p className="text-xs text-white/30">Loading preferences...</p>
+              </div>
+            )}
             <div className="space-y-6">
               <div className="bg-surface border border-white/5 p-4">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-white/50 mb-3">Recent Notifications</h4>
@@ -131,7 +137,13 @@ export function CustomerComms() {
         )}
 
         {activeTab === 'preferences' && (
-          <PreferenceSettings preferences={comms.preferences} onUpdate={comms.updatePreferences} />
+          comms.preferences ? (
+            <PreferenceSettings preferences={comms.preferences} onUpdate={comms.updatePreferences} />
+          ) : (
+            <div className="bg-surface border border-white/5 p-6 text-center">
+              <p className="text-xs text-white/30">Loading preferences...</p>
+            </div>
+          )
         )}
 
         {activeTab === 'history' && (

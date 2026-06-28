@@ -40,6 +40,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     approved: 'bg-green/10 text-green-400 border-green/20',
     rejected: 'bg-red/10 text-red-400 border-red/20',
     deployed: 'bg-lime/10 text-lime border-lime/20',
+    resolved: 'bg-lime/10 text-lime border-lime/20',
     closed: 'bg-white/5 text-white/30 border-white/10 line-through',
   };
 

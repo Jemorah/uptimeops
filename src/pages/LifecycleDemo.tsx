@@ -94,7 +94,7 @@ export function LifecycleDemo() {
           />
         );
       case 'monitoring':
-        return <MonitoringDashboard monitoring={lifecycle.lifecycle.monitoringState} />;
+        return <MonitoringDashboard status={lifecycle.lifecycle.monitoringState} />;
       case 'automation':
         return <AutomationTriggers />;
       default:

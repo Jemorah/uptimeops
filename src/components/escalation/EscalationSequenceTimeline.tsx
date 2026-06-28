@@ -21,6 +21,7 @@ const statusToStep: Record<EscalationStatus, number> = {
   approved: 9,
   rejected: 6,
   deployed: 9,
+  resolved: 9,
   closed: 9,
 };
 

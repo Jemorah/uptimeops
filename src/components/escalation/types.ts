@@ -22,6 +22,7 @@ export type EscalationStatus =
   | 'approved'               // Approved, ready to deploy
   | 'rejected'               // Rejected, back to engineer
   | 'deployed'               // Fix deployed
+  | 'resolved'               // AI resolved before human took over
   | 'closed';                // Escalation resolved
 
 export type EngineerLevel = 'L1' | 'L2' | 'L3';
