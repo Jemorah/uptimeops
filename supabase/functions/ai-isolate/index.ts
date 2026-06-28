@@ -147,7 +147,9 @@ serve(async (req) => {
       await supabase.from('scan_results').update({ status: 'running' }).eq('id', scan.id);
 
       try {
+        const startMs = Date.now();
         const output = await analyzeIsolation(scannerName, incident, website_url);
+        const elapsedMs = Date.now() - startMs;
         const severityCounts = countSeverity(output.findings);
 
         await supabase.from('scan_results').update({
@@ -156,7 +158,7 @@ serve(async (req) => {
           parsed_output: output,
           severity_counts: severityCounts,
           confidence_score: output.confidence,
-          execution_time_ms: Math.floor(Math.random() * 8000) + 1000,
+          execution_time_ms: elapsedMs,
         }).eq('id', scan.id);
 
         totalConfidence += output.confidence;

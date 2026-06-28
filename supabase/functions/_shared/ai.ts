@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // AI CLIENT — Shared utilities for AI agent functions
-// Supports Anthropic (primary), OpenAI (secondary), LangSmith (fallback)
+// Anthropic (primary) → OpenAI (secondary) → error if none available
+// NO MOCK DATA. If no provider is configured, returns error.
 // ═══════════════════════════════════════════════════════════════
 
 import { logInfo, logError } from './logger.ts';
@@ -96,26 +97,7 @@ async function callOpenAI(prompt: string, systemPrompt?: string): Promise<AIResp
   }
 }
 
-// ── LangSmith (3rd fallback — logging + basic inference) ──
-async function callLangSmith(prompt: string): Promise<AIResponse | null> {
-  const apiKey = Deno.env.get('LANGSMITH_API_KEY');
-  if (!apiKey) return null;
-
-  try {
-    // LangSmith is primarily for tracing, but we can use it as a final fallback
-    logInfo(FUNCTION, 'LangSmith fallback invoked', { prompt_length: prompt.length });
-    return {
-      content: `[AI Analysis Pending — LangSmith traced]\n\nIncident analysis:\n${prompt.slice(0, 500)}...`,
-      model: 'langsmith-fallback',
-      provider: 'langsmith',
-    };
-  } catch (e) {
-    logError(FUNCTION, 'LangSmith call failed', e);
-    return null;
-  }
-}
-
-// ── Unified AI Call — Tries providers in order ──
+// ── Unified AI Call — Tries providers in order, throws if none available ──
 export async function callAI(prompt: string, systemPrompt?: string): Promise<AIResponse> {
   logInfo(FUNCTION, 'Calling AI', { prompt_length: prompt.length });
 
@@ -133,26 +115,15 @@ export async function callAI(prompt: string, systemPrompt?: string): Promise<AIR
     return openaiResult;
   }
 
-  // Final fallback to LangSmith
-  const langsmithResult = await callLangSmith(prompt);
-  if (langsmithResult) {
-    logInfo(FUNCTION, 'LangSmith fallback used');
-    return langsmithResult;
-  }
-
-  // Absolute fallback — simulated response
-  logWarn(FUNCTION, 'No AI provider available, using simulation');
-  return {
-    content: `[AI OFFLINE] No AI provider configured. Please set ANTHROPIC_API_KEY, OPENAI_API_KEY, or LANGSMITH_API_KEY in Supabase Edge Function Secrets.\n\nPrompt: ${prompt.slice(0, 200)}...`,
-    model: 'none',
-    provider: 'simulated',
-  };
+  // No provider available — this is an error, not a simulation
+  throw new Error(
+    'No AI provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Supabase Edge Function Secrets.'
+  );
 }
 
 // Parse structured JSON from AI response
 export function parseAIJson<T>(content: string): T | null {
   try {
-    // Try to extract JSON from markdown code blocks
     const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[1] || jsonMatch[0]) as T;
@@ -162,5 +133,3 @@ export function parseAIJson<T>(content: string): T | null {
     return null;
   }
 }
-
-import { logWarn } from './logger.ts';

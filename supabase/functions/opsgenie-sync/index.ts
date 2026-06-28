@@ -4,7 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { logInfo, logError, logWarn } from '../_shared/logger.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
 import { getSupabaseClient, getAuthUser } from '../_shared/supabase.ts';
 
 const FUNCTION = 'opsgenie-sync';

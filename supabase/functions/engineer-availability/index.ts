@@ -4,7 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { logInfo, logError, logWarn } from '../_shared/logger.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
 import { getSupabaseClient, getAuthUser } from '../_shared/supabase.ts';
 
 const FUNCTION = 'engineer-availability';
@@ -248,7 +248,7 @@ serve(async (req) => {
             body: JSON.stringify({ action: 'set_oncall', engineer_id: targetId, date: scheduleDate, is_on_call: onCall }),
           });
         } catch (err) {
-          logWarn(FUNCTION, 'OpsGenie sync failed for set_oncall', { error: err instanceof Error ? err.message : String(err) });
+          logError(FUNCTION, 'OpsGenie sync failed for set_oncall', err, { engineer_id: targetId });
           // Continue — local schedule is already updated
         }
       }

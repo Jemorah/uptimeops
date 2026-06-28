@@ -228,7 +228,7 @@ serve(async (req) => {
       .single();
 
     if (!pipeline) {
-      const pipeline_id = `pl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const pipeline_id = `pl-${Date.now()}-${crypto.randomUUID().slice(0, 6)}`;
       const { data: newPipeline } = await supabase
         .from('pipeline_states')
         .insert({ pipeline_id, incident_id, current_step: 'triage', status: 'pending' })

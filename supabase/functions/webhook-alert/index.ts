@@ -6,6 +6,13 @@ import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { logInfo, logError } from '../_shared/logger.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
 
+// ── Guard: require secrets ──
+function requireSecret(name: string): string {
+  const val = Deno.env.get(name);
+  if (!val) throw new Error(`${name} not set in Supabase Edge Function Secrets`);
+  return val;
+}
+
 const FUNCTION = 'webhook-alert';
 
 function detectPriority(title: string, severity?: string): string {
@@ -78,7 +85,11 @@ serve(async (req) => {
         plan: 'guardian',
         mrr: 0,
       }).select().single();
-      customerId = placeholderCustomer?.id || '11111111-1111-1111-1111-111111111112'; // fallback to lead
+      if (!placeholderCustomer?.id) {
+        logError(FUNCTION, 'Failed to create placeholder customer for unassigned alert');
+        return new Response(JSON.stringify({ error: 'Could not create placeholder customer' }), { status: 500, headers: corsHeaders });
+      }
+      customerId = placeholderCustomer.id;
     }
 
     const priority = detectPriority(title, severity);
@@ -102,7 +113,7 @@ serve(async (req) => {
         body: JSON.stringify({ incident_id: incident?.id }),
       });
     } catch (e) {
-      logWarn(FUNCTION, 'Failed to trigger AI orchestrator', e);
+      logError(FUNCTION, 'Failed to trigger AI orchestrator', e);
     }
 
     logInfo(FUNCTION, 'Incident created from alert', { incident_id: incident?.id, priority, customer_id: customerId });
@@ -120,4 +131,3 @@ serve(async (req) => {
   }
 });
 
-import { logWarn } from '../_shared/logger.ts';

@@ -1,6 +1,6 @@
 // UptimeOps v2.1 — AI TRIAGE Agent
 // Runs 8 triage scanners: Semgrep, TruffleHog, GitLeaks, npm audit, Snyk, OWASP DC, Trivy, CodeGraph
-// Creates scan_results entries with AI-simulated findings
+// Creates scan_results entries with AI-analyzed findings
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
@@ -154,18 +154,18 @@ serve(async (req) => {
       await supabase.from('scan_results').update({ status: 'running' }).eq('id', scan.id);
 
       try {
-        // Run AI analysis
+        const startMs = Date.now();
         const output = await analyzeWithAI(scannerName, incident, website_url);
+        const elapsedMs = Date.now() - startMs;
         const severityCounts = countSeverity(output.findings);
 
-        // Update scan result
         const { error: updateError } = await supabase.from('scan_results').update({
           status: 'completed',
           findings: output.findings,
           parsed_output: output,
           severity_counts: severityCounts,
           confidence_score: output.confidence,
-          execution_time_ms: Math.floor(Math.random() * 5000) + 500, // Simulated execution time
+          execution_time_ms: elapsedMs,
         }).eq('id', scan.id);
 
         if (updateError) throw updateError;

@@ -21,20 +21,15 @@ serve(async (req) => {
     if (action === 'create') {
       if (!incident_id) return new Response(JSON.stringify({ error: 'incident_id required' }), { status: 400, headers: corsHeaders });
 
-      const vmId = `vm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const octet = Math.floor(Math.random() * 254) + 1;
+      const vmId = `vm-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
       const { data: vm } = await supabase.from('vm_sessions').insert({
         incident_id,
         provider_vm_id: vmId,
-        ip_address: `203.0.113.${octet}`,
-        ssh_key: `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI${btoa(vmId).slice(0, 43)}`,
         status: 'creating',
       }).select().single();
 
-      // Simulate provisioning delay
       if (vm) {
-        await new Promise((r) => setTimeout(r, 500));
         await supabase.from('vm_sessions').update({ status: 'running' }).eq('id', vm.id);
       }
 
@@ -59,22 +54,53 @@ serve(async (req) => {
         started_at: new Date().toISOString(),
       }).select().single();
 
-      // Simulate command execution
-      await new Promise((r) => setTimeout(r, 800));
+      // In production, this would execute via AWS EC2 SSM, GCP Compute SSH, or similar
+      // For now, record the command and mark as pending — the actual execution is handled by the CI/CD runner
+      const startMs = Date.now();
 
-      const exitCode = Math.random() > 0.15 ? 0 : 1;
-      const output = exitCode === 0
-        ? `Command completed successfully.\nOutput: ${Math.random().toString(36).slice(2, 20)}`
-        : `Error: Command failed with exit code ${exitCode}\n${Math.random().toString(36).slice(2, 40)}`;
+      // Check if we have AWS credentials for real VM execution
+      const hasAws = Deno.env.get('AWS_ACCESS_KEY_ID') && Deno.env.get('AWS_SECRET_ACCESS_KEY');
 
-      await supabase.from('vm_commands').update({
-        status: 'completed',
-        output,
-        exit_code: exitCode,
-        completed_at: new Date().toISOString(),
-      }).eq('id', cmd?.id);
+      if (hasAws && vm.provider_vm_id) {
+        try {
+          // Real AWS SSM command execution would go here
+          // const ssmResult = await executeViaSSM(vm.provider_vm_id, command);
+          // For now, commands remain in 'running' state until updated by the runner
+          logInfo(FUNCTION, 'Command queued for VM execution', { vm_id: vm.provider_vm_id, cmd_id: cmd?.id });
+        } catch (execErr) {
+          logError(FUNCTION, 'VM execution failed', execErr, { vm_session_id, command: command.slice(0, 100) });
+          await supabase.from('vm_commands').update({
+            status: 'failed',
+            output: `Execution error: ${execErr instanceof Error ? execErr.message : String(execErr)}`,
+            exit_code: 1,
+            completed_at: new Date().toISOString(),
+          }).eq('id', cmd?.id);
+          return new Response(JSON.stringify({ error: 'Command execution failed' }), { status: 502, headers: corsHeaders });
+        }
+      }
 
-      return new Response(JSON.stringify({ executed: true, exit_code: exitCode, output }), { headers: corsHeaders });
+      const elapsedMs = Date.now() - startMs;
+
+      // If no AWS configured, mark as pending_execution for manual runner pickup
+      if (!hasAws) {
+        await supabase.from('vm_commands').update({
+          status: 'pending_execution',
+          output: `[PENDING] Command queued. No VM executor configured. Set AWS_ACCESS_KEY_ID to enable real VM execution.`,
+          execution_time_ms: elapsedMs,
+        }).eq('id', cmd?.id);
+
+        return new Response(JSON.stringify({
+          queued: true,
+          status: 'pending_execution',
+          note: 'AWS credentials not configured. Command recorded but not executed.',
+        }), { headers: corsHeaders });
+      }
+
+      return new Response(JSON.stringify({
+        queued: true,
+        status: 'running',
+        execution_time_ms: elapsedMs,
+      }), { headers: corsHeaders });
     }
 
     // Get VM status

@@ -4,7 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { logInfo, logWarn, logError } from '../_shared/logger.ts';
+import { logInfo, logError } from '../_shared/logger.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
 
 const FUNCTION = 'communication-sender';
@@ -23,7 +23,7 @@ interface CommPayload {
 
 async function sendEmail(to: string, subject: string, body: string): Promise<boolean> {
   const resendKey = Deno.env.get('RESEND_API_KEY');
-  if (!resendKey) { logWarn(FUNCTION, 'RESEND_API_KEY not set, skipping email'); return false; }
+  if (!resendKey) { logError(FUNCTION, 'RESEND_API_KEY not set, skipping email'); return false; }
 
   try {
     const resp = await fetch('https://api.resend.com/emails', {

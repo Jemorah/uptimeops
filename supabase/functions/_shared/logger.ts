@@ -13,11 +13,6 @@ export function logInfo(fn: string, message: string, meta?: Record<string, unkno
   console.log(JSON.stringify(entry));
 }
 
-export function logWarn(fn: string, message: string, meta?: Record<string, unknown>) {
-  const entry: LogEntry = { timestamp: new Date().toISOString(), level: 'warn', function: fn, message, metadata: meta };
-  console.warn(JSON.stringify(entry));
-}
-
 export function logError(fn: string, message: string, error: unknown, meta?: Record<string, unknown>) {
   const entry: LogEntry = {
     timestamp: new Date().toISOString(),
