@@ -47,13 +47,25 @@ function applyAdminOverride(user: User | null, role: UserRole): UserRole {
 }
 
 // ── Build login URL ──
+// redirectTo is the hash path (e.g. "/customer") NOT a full URL.
+// This ensures navigate() works after login in single-domain mode.
 export function getLoginUrl(currentPath?: string): string {
-  const redirectTo = currentPath || (typeof window !== 'undefined' ? window.location.href : '');
-  // In single-domain mode, just navigate to /#/login with redirect_to param
+  let redirectTo: string;
+  if (currentPath) {
+    redirectTo = currentPath;
+  } else if (typeof window !== 'undefined') {
+    // Extract just the hash path, not the full URL
+    const hash = window.location.hash;
+    redirectTo = hash ? hash.replace(/^#/, '') : window.location.pathname;
+  } else {
+    redirectTo = '/';
+  }
+  // Strip any existing query params from the redirect path
+  redirectTo = redirectTo.split('?')[0];
+
   if (!isSubdomainMode()) {
     return `/#/login?redirect_to=${encodeURIComponent(redirectTo)}`;
   }
-  // In subdomain mode, go to www subdomain
   const base = isLocalhost() ? `${window.location.origin}` : `https://${SUBDOMAINS.www}`;
   return `${base}/#/login?redirect_to=${encodeURIComponent(redirectTo)}`;
 }

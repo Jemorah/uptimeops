@@ -26,17 +26,19 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
     { label: 'Status', path: '/status' },
   ];
 
-  const portalLinks = [];
-  if (isAuthenticated) {
-    if (role === 'customer' || role === 'coordinator' || role === 'admin') {
-      portalLinks.push({ label: 'Customer Portal', path: '/customer', icon: LayoutDashboard });
-    }
-    if (role === 'engineer' || role === 'coordinator' || role === 'admin') {
-      portalLinks.push({ label: 'Engineer Portal', path: '/engineer', icon: Users });
-    }
-    if (role === 'coordinator' || role === 'admin') {
-      portalLinks.push({ label: 'HQ Control', path: '/hq', icon: Shield });
-    }
+  // Build portal links in priority order (HQ first for admin)
+  const portalLinks: { label: string; path: string; icon: typeof Shield }[] = [];
+  if (isAuthenticated && role === 'admin') {
+    portalLinks.push({ label: 'HQ Control', path: '/hq', icon: Shield });
+    portalLinks.push({ label: 'Engineer Portal', path: '/engineer', icon: Users });
+    portalLinks.push({ label: 'Customer Portal', path: '/customer', icon: LayoutDashboard });
+  } else if (isAuthenticated && role === 'coordinator') {
+    portalLinks.push({ label: 'HQ Control', path: '/hq', icon: Shield });
+    portalLinks.push({ label: 'Customer Portal', path: '/customer', icon: LayoutDashboard });
+  } else if (isAuthenticated && role === 'engineer') {
+    portalLinks.push({ label: 'Engineer Portal', path: '/engineer', icon: Users });
+  } else if (isAuthenticated && role === 'customer') {
+    portalLinks.push({ label: 'Customer Portal', path: '/customer', icon: LayoutDashboard });
   }
 
   return (

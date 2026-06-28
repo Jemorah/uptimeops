@@ -60,9 +60,18 @@ const PIPELINE_STEPS = [
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, role } = useAuth();
 
   const goTo = (path: string) => () => navigate(path);
+
+  // Determine dashboard path based on role
+  const dashboardPath = role === 'admin' || role === 'coordinator' ? '/hq'
+    : role === 'engineer' ? '/engineer'
+    : '/customer';
+  const dashboardLabel = role === 'admin' ? 'HQ Control'
+    : role === 'coordinator' ? 'HQ Control'
+    : role === 'engineer' ? 'Engineer Portal'
+    : 'Dashboard';
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
@@ -77,9 +86,9 @@ export function LandingPage() {
           </div>
           <div className="flex items-center gap-3">
             <button onClick={goTo('/status')} className="text-xs text-white/50 hover:text-white transition-colors">Status</button>
-            {isAuthenticated ? (
-              <Button size="sm" onClick={goTo('/customer')} className="bg-[#a3e635] text-black hover:bg-[#a3e635]/90 text-xs h-8">
-                Dashboard
+            {isAuthenticated && role !== 'public' ? (
+              <Button size="sm" onClick={goTo(dashboardPath)} className="bg-[#a3e635] text-black hover:bg-[#a3e635]/90 text-xs h-8">
+                {dashboardLabel}
               </Button>
             ) : (
               <>

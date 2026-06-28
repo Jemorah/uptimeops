@@ -1,14 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
 // LOGIN PAGE — UptimeOps
 // Email/Password + GitHub OAuth + Google OAuth
-// Handles single-domain (Vercel) and multi-subdomain modes.
+// Admin auto-signup: if cumouat@gmail.com doesn't exist, auto-creates account.
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, getPostLoginDestination } from '@/hooks/useAuth';
-import { isSubdomainMode } from '@/lib/supabase/client';
-import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft } from 'lucide-react';
+import { isSubdomainMode, isAdminEmail } from '@/lib/supabase/client';
+import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -24,36 +24,46 @@ export function LoginPage() {
   const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showAdminSetup, setShowAdminSetup] = useState(false);
 
-  // The redirect parameter set by getLoginUrl() is "redirect_to"
-  const redirectPath = searchParams.get('redirect_to') || '';
+  // redirect_to is a hash path like "/customer" or "/hq"
+  const rawRedirect = searchParams.get('redirect_to') || '';
+  const redirectPath = rawRedirect.startsWith('http')
+    ? new URL(rawRedirect).hash.replace(/^#/, '').split('?')[0] || '/'
+    : rawRedirect.split('?')[0] || '';
+
+  // ── Navigate after successful auth ──
+  function goToDestination(role: import('@/lib/supabase/client').UserRole) {
+    if (redirectPath && redirectPath !== '/login') {
+      navigate(redirectPath);
+    } else if (!isSubdomainMode()) {
+      navigate(getPostLoginDestination(role, null));
+    }
+    // In subdomain mode, the page redirect is handled by the caller
+  }
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setShowAdminSetup(false);
     setIsLoading(true);
 
     try {
       if (mode === 'signin') {
-        // signIn returns { error, role } — use the returned role, NOT the stale closure
         const { error: signInError, role: returnedRole } = await signIn(email, password);
 
         if (signInError) {
-          setError(signInError.message);
-          toast.error(signInError.message);
-        } else if (returnedRole && returnedRole !== 'public') {
-          toast.success('Signed in successfully');
-
-          // Redirect based on mode
-          if (redirectPath) {
-            // User came from a protected page — take them back
-            navigate(redirectPath);
-          } else if (!isSubdomainMode()) {
-            // Single-domain mode: client-side navigation to the right portal
-            const dest = getPostLoginDestination(returnedRole, null);
-            navigate(dest);
+          // Admin auto-signup: if admin email doesn't exist, offer to create
+          if (isAdminEmail(email) && signInError.message?.includes('Invalid')) {
+            setError('Admin account not found. Create it now?');
+            setShowAdminSetup(true);
+          } else {
+            setError(signInError.message);
+            toast.error(signInError.message);
           }
-          // In subdomain mode, signIn() doesn't redirect — caller handles it
+        } else if (returnedRole && returnedRole !== 'public') {
+          toast.success(`Signed in — ${returnedRole} access`);
+          goToDestination(returnedRole);
         }
       } else {
         // Sign up mode
@@ -67,12 +77,10 @@ export function LoginPage() {
           setError(signUpError.message);
           toast.error(signUpError.message);
         } else if (returnedRole && returnedRole !== 'public') {
-          toast.success('Account created!');
-          if (!isSubdomainMode()) {
-            navigate(getPostLoginDestination(returnedRole, null));
-          }
+          toast.success(`Account created — ${returnedRole} access`);
+          goToDestination(returnedRole);
         } else {
-          toast.success('Check your email for confirmation.');
+          toast.success('Account created! Check your email for confirmation.');
           setMode('signin');
         }
       }
@@ -83,8 +91,39 @@ export function LoginPage() {
     }
   }
 
+  // ── Admin auto-setup: sign up + immediately sign in ──
+  async function handleAdminSetup() {
+    setError('');
+    setIsLoading(true);
+    setShowAdminSetup(false);
+    try {
+      // Step 1: Sign up the admin account
+      const { error: signUpError } = await signUp(email, password, { full_name: 'Admin' });
+      if (signUpError && !signUpError.message?.includes('already')) {
+        setError('Failed to create admin: ' + signUpError.message);
+        toast.error(signUpError.message);
+        setIsLoading(false);
+        return;
+      }
+      // Step 2: Immediately sign in
+      const { error: signInError, role: returnedRole } = await signIn(email, password);
+      if (signInError) {
+        setError(signInError.message);
+        toast.error(signInError.message);
+      } else if (returnedRole && returnedRole !== 'public') {
+        toast.success(`Admin account created — ${returnedRole} access granted`);
+        goToDestination(returnedRole);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Admin setup failed');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function handleOAuth(provider: 'github' | 'google') {
     setError('');
+    setShowAdminSetup(false);
     setIsLoading(true);
     try {
       const { error } = await signInWithOAuth(provider);
@@ -92,7 +131,7 @@ export function LoginPage() {
         setError(error.message);
         toast.error(error.message);
       }
-      // If no error, the browser is being redirected to the OAuth provider
+      // Browser redirects to OAuth provider — no further action needed
     } catch (err: any) {
       const msg = err?.message || `Failed to sign in with ${provider}`;
       setError(msg);
@@ -122,6 +161,18 @@ export function LoginPage() {
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
+        )}
+
+        {/* Admin Setup Button */}
+        {showAdminSetup && (
+          <button
+            onClick={handleAdminSetup}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#a3e635]/10 border border-[#a3e635]/30 text-[#a3e635] text-xs font-bold uppercase hover:bg-[#a3e635]/20 transition-colors"
+          >
+            <Shield className="w-4 h-4" />
+            {isLoading ? 'Creating admin account...' : 'Create Admin Account & Sign In'}
+          </button>
         )}
 
         {/* OAuth Buttons */}
@@ -203,9 +254,9 @@ export function LoginPage() {
         {/* Toggle mode */}
         <p className="text-center text-xs text-white/40">
           {mode === 'signin' ? (
-            <>Don't have an account? <button onClick={() => { setMode('signup'); setError(''); }} className="text-[#a3e635] hover:underline">Sign up</button></>
+            <>Don't have an account? <button onClick={() => { setMode('signup'); setError(''); setShowAdminSetup(false); }} className="text-[#a3e635] hover:underline">Sign up</button></>
           ) : (
-            <>Already have an account? <button onClick={() => { setMode('signin'); setError(''); }} className="text-[#a3e635] hover:underline">Sign in</button></>
+            <>Already have an account? <button onClick={() => { setMode('signin'); setError(''); setShowAdminSetup(false); }} className="text-[#a3e635] hover:underline">Sign in</button></>
           )}
         </p>
 
