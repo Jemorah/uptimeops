@@ -139,16 +139,13 @@ serve(async (req) => {
         JSON.stringify({ error: 'No scan entries found' }),
         { status: 404, headers: corsHeaders }
       );
-    }
-
-    logInfo(FUNCTION, `Running triage`, { incident_id, scanner_count: scanEntries.length });
+    };
 
     let totalConfidence = 0;
     const results: Record<string, unknown>[] = [];
 
     for (const scan of scanEntries) {
       const scannerName = scan.scanner_name || scan.scanner_registry?.name || 'Unknown';
-      logInfo(FUNCTION, `Analyzing with ${scannerName}`, { scan_id: scan.id });
 
       // Mark as running
       await supabase.from('scan_results').update({ status: 'running' }).eq('id', scan.id);
@@ -173,10 +170,7 @@ serve(async (req) => {
         totalConfidence += output.confidence;
         results.push({ scanner: scannerName, confidence: output.confidence, passed: output.passed, findings: output.findings.length });
 
-        logInfo(FUNCTION, `${scannerName} completed`, { findings: output.findings.length, confidence: output.confidence });
-
-      } catch (scanErr) {
-        logError(FUNCTION, `${scannerName} failed`, scanErr, { scan_id: scan.id });
+      } catch (scanErr) {;
         await supabase.from('scan_results').update({
           status: 'failed',
           raw_output: scanErr instanceof Error ? scanErr.message : String(scanErr),
@@ -188,8 +182,6 @@ serve(async (req) => {
     const avgConfidence = Math.round(totalConfidence / scanEntries.length);
     const allPassed = results.every(r => r.passed);
 
-    logInfo(FUNCTION, `Triage complete`, { pipeline_id, avg_confidence: avgConfidence, scanners: scanEntries.length });
-
     return new Response(JSON.stringify({
       success: true,
       stage: 'triage',
@@ -200,8 +192,7 @@ serve(async (req) => {
       pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Triage failed', err);
+  } catch (err) {;
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

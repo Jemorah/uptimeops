@@ -79,8 +79,6 @@ async function invokeStageFunction(
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-  logInfo(FUNCTION, `Invoking ${functionName}`, { pipeline_id, scan_count: scan_ids.length });
-
   try {
     const resp = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
       method: 'POST',
@@ -103,8 +101,7 @@ async function invokeStageFunction(
       stage,
       confidence: result.confidence || 0,
     };
-  } catch (err) {
-    logError(FUNCTION, `${functionName} invocation failed`, err, { pipeline_id, stage });
+  } catch (err) {;
     return {
       success: false,
       scanners_triggered: scan_ids.length,
@@ -142,8 +139,7 @@ async function escalateToHuman(
   pipeline_id: string,
   failed_stage: Stage,
   reason: string
-) {
-  logInfo(FUNCTION, 'Escalating to human', { pipeline_id, failed_stage, reason });
+) {;
 
   await supabase.from('human_escalations').insert({
     incident_id,
@@ -172,8 +168,7 @@ async function runStage(
 ): Promise<StageResult> {
   // 1. Get scanners for this stage
   const scanners = await getScannersForStage(supabase, stage);
-  if (!scanners.length) {
-    logInfo(FUNCTION, `No active scanners for stage ${stage}`, { pipeline_id });
+  if (!scanners.length) {;
     return { success: true, scanners_triggered: 0, stage, confidence: 0 };
   }
 
@@ -235,7 +230,6 @@ serve(async (req) => {
         .select()
         .single();
       pipeline = newPipeline;
-      logInfo(FUNCTION, 'Created pipeline', { pipeline_id, incident_id });
     }
 
     // Handle status check
@@ -386,8 +380,7 @@ serve(async (req) => {
       pipeline_id: pipeline.pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Orchestrator failed', err);
+  } catch (err) {;
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

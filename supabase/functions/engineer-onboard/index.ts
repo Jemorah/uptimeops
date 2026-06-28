@@ -30,8 +30,7 @@ async function acceptInvitation(
   token: string,
   password: string,
   full_name: string
-): Promise<{ success: boolean; engineer_id?: string; error?: string }> {
-  logInfo(FUNCTION, 'Accepting invitation', { token: token.slice(0, 8) + '...' });
+): Promise<{ success: boolean; engineer_id?: string; error?: string }> {;
 
   // 1. Find and validate invitation
   const { data: invitation, error: invError } = await supabase
@@ -60,8 +59,7 @@ async function acceptInvitation(
     user_metadata: { full_name },
   });
 
-  if (authError || !authUser.user) {
-    logError(FUNCTION, 'Failed to create auth user', authError);
+  if (authError || !authUser.user) {;
     return { success: false, error: authError?.message || 'Failed to create user account' };
   }
 
@@ -79,8 +77,7 @@ async function acceptInvitation(
     max_weekly_hours: 40,
   });
 
-  if (profileError) {
-    logError(FUNCTION, 'Failed to create engineer profile', profileError);
+  if (profileError) {;
     // Don't fail - the auth user exists, profile can be fixed manually
   }
 
@@ -90,8 +87,7 @@ async function acceptInvitation(
     role: 'engineer',
   });
 
-  if (roleError) {
-    logError(FUNCTION, 'Failed to set user role', roleError);
+  if (roleError) {;
   }
 
   // 5. Mark invitation as used
@@ -109,8 +105,6 @@ async function acceptInvitation(
       method: 'invitation',
     },
   });
-
-  logInfo(FUNCTION, 'Engineer onboarded', { user_id: userId, email: invitation.email });
 
   return { success: true, engineer_id: userId };
 }
@@ -131,8 +125,7 @@ async function createEngineer(
     max_weekly_hours?: number;
     timezone?: string;
   }
-): Promise<{ success: boolean; engineer_id?: string; error?: string }> {
-  logInfo(FUNCTION, 'Creating engineer', { email: data.email, caller: callerId });
+): Promise<{ success: boolean; engineer_id?: string; error?: string }> {;
 
   // Check caller is admin or coordinator
   const { data: callerRole } = await supabase
@@ -288,8 +281,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Onboarding failed', err);
+  } catch (err) {;
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

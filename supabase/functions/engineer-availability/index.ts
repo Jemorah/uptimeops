@@ -130,8 +130,6 @@ serve(async (req) => {
         user_id: engineer.id,
         metadata: { incident_id, method: 'auto_assign', previous_count: engineer.active_incident_count },
       });
-
-      logInfo(FUNCTION, 'Auto-assigned', { incident_id, engineer: engineer.full_name });
       return new Response(JSON.stringify({ assigned: true, engineer }), { headers: corsHeaders });
     }
 
@@ -247,8 +245,7 @@ serve(async (req) => {
             headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'set_oncall', engineer_id: targetId, date: scheduleDate, is_on_call: onCall }),
           });
-        } catch (err) {
-          logError(FUNCTION, 'OpsGenie sync failed for set_oncall', err, { engineer_id: targetId });
+        } catch (err) {;
           // Continue — local schedule is already updated
         }
       }
@@ -319,8 +316,7 @@ serve(async (req) => {
       },
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Request failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

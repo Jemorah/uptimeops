@@ -23,7 +23,7 @@ interface CommPayload {
 
 async function sendEmail(to: string, subject: string, body: string): Promise<boolean> {
   const resendKey = Deno.env.get('RESEND_API_KEY');
-  if (!resendKey) { logError(FUNCTION, 'RESEND_API_KEY not set, skipping email'); return false; }
+  if (!resendKey) {; return false; }
 
   try {
     const resp = await fetch('https://api.resend.com/emails', {
@@ -32,7 +32,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<boo
       body: JSON.stringify({ from: 'UptimeOps <alerts@uptimeops.com>', to, subject, html: body }),
     });
     return resp.ok;
-  } catch (e) { logError(FUNCTION, 'Email send failed', e); return false; }
+  } catch (e) {; return false; }
 }
 
 async function createNotification(supabase: any, payload: CommPayload) {
@@ -54,8 +54,6 @@ serve(async (req) => {
   try {
     const payload: CommPayload = await req.json();
     const supabase = getSupabaseClient(req);
-
-    logInfo(FUNCTION, 'Processing communication', { type: payload.type, channel: payload.channel });
 
     // Resolve recipient email from customer record if not provided
     let toEmail = payload.to;
@@ -102,8 +100,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ sent: true, results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  } catch (err) {
-    logError(FUNCTION, 'Send failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

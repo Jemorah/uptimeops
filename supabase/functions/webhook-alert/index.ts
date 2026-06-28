@@ -35,8 +35,6 @@ serve(async (req) => {
     const source = req.headers.get('x-alert-source') || 'unknown';
     const supabase = getSupabaseClient(req);
 
-    logInfo(FUNCTION, 'Alert received', { source, alert_id: payload.id || payload.alert_id || 'unknown' });
-
     // Normalize alert from different sources
     let title: string;
     let description: string;
@@ -85,8 +83,7 @@ serve(async (req) => {
         plan: 'guardian',
         mrr: 0,
       }).select().single();
-      if (!placeholderCustomer?.id) {
-        logError(FUNCTION, 'Failed to create placeholder customer for unassigned alert');
+      if (!placeholderCustomer?.id) {;
         return new Response(JSON.stringify({ error: 'Could not create placeholder customer' }), { status: 500, headers: corsHeaders });
       }
       customerId = placeholderCustomer.id;
@@ -112,11 +109,8 @@ serve(async (req) => {
         headers: { Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ incident_id: incident?.id }),
       });
-    } catch (e) {
-      logError(FUNCTION, 'Failed to trigger AI orchestrator', e);
-    }
-
-    logInfo(FUNCTION, 'Incident created from alert', { incident_id: incident?.id, priority, customer_id: customerId });
+    } catch (e) {;
+    };
 
     return new Response(JSON.stringify({
       incident_created: true,
@@ -125,8 +119,7 @@ serve(async (req) => {
       customer_id: customerId,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  } catch (err) {
-    logError(FUNCTION, 'Alert processing failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

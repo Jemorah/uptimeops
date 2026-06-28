@@ -38,8 +38,6 @@ serve(async (req) => {
         action: 'credential_stored', performed_by_type: 'customer',
         new_values: { fingerprint: public_key_fingerprint },
       });
-
-      logInfo(FUNCTION, 'Credential stored', { credential_id: cred.id, customer_id });
       return new Response(JSON.stringify({ stored: true, credential_id: cred.id, expires_at: cred.expires_at }), { headers: corsHeaders });
     }
 
@@ -74,8 +72,6 @@ serve(async (req) => {
       await supabase.from('credentials_vault')
         .update({ revoked_at: new Date().toISOString() })
         .eq('id', credential_id);
-
-      logInfo(FUNCTION, 'Credential revoked', { credential_id });
       return new Response(JSON.stringify({ revoked: true }), { headers: corsHeaders });
     }
 
@@ -89,8 +85,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
-  } catch (err) {
-    logError(FUNCTION, 'Request failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

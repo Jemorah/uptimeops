@@ -91,8 +91,6 @@ serve(async (req) => {
       entity_id: incident_id,
     });
 
-    logInfo(FUNCTION, 'Rollback complete', { incident_id, steps: rollbackSteps.length, reason });
-
     return new Response(JSON.stringify({
       rollback: true,
       steps_completed: rollbackSteps.length,
@@ -100,8 +98,7 @@ serve(async (req) => {
       escalated: true,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Rollback failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

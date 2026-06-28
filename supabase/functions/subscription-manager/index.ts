@@ -30,8 +30,6 @@ serve(async (req) => {
         .select('*, customers(email, full_name)')
         .eq('status', 'active')
         .gte('incidents_used_this_period', supabase.rpc('get_incidents_allowance'));
-
-      logInfo(FUNCTION, 'Daily cron complete', { checked: nearingLimit?.length || 0 });
       return new Response(JSON.stringify({ cron: 'ok', checked: nearingLimit?.length || 0 }), { headers: corsHeaders });
     }
 
@@ -51,8 +49,6 @@ serve(async (req) => {
 
       // Recalculate MRR
       await supabase.rpc('update_customer_mrr', { p_customer_id: customer_id });
-
-      logInfo(FUNCTION, 'Plan changed', { customer_id, plan });
       return new Response(JSON.stringify({ changed: true, plan, price_cents: config.price_cents }), { headers: corsHeaders });
     }
 
@@ -126,8 +122,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
-  } catch (err) {
-    logError(FUNCTION, 'Request failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

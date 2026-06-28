@@ -117,8 +117,6 @@ serve(async (req) => {
     const { data: scanEntries } = await supabase.from('scan_results').select('*').in('id', scan_ids);
     if (!scanEntries?.length) return new Response(JSON.stringify({ error: 'No scan entries' }), { status: 404, headers: corsHeaders });
 
-    logInfo(FUNCTION, `Running repair`, { incident_id, scanners: scanEntries.length });
-
     let totalConfidence = 0;
     const allFixes: string[] = [];
 
@@ -144,10 +142,7 @@ serve(async (req) => {
         totalConfidence += output.confidence;
         allFixes.push(...output.fixes_applied);
 
-        logInfo(FUNCTION, `${scannerName} complete`, { fixes: output.fixes_applied.length, confidence: output.confidence });
-
-      } catch (err) {
-        logError(FUNCTION, `${scannerName} failed`, err, { scan_id: scan.id });
+      } catch (err) {;
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 10;
       }
@@ -169,8 +164,7 @@ serve(async (req) => {
       fixes_found: uniqueFixes.length, scanners_run: scanEntries.length, pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Repair failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

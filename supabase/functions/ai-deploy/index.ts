@@ -114,8 +114,6 @@ serve(async (req) => {
     const { data: scanEntries } = await supabase.from('scan_results').select('*').in('id', scan_ids);
     if (!scanEntries?.length) return new Response(JSON.stringify({ error: 'No scan entries' }), { status: 404, headers: corsHeaders });
 
-    logInfo(FUNCTION, `Running deploy validation`, { incident_id, scanners: scanEntries.length });
-
     let totalConfidence = 0;
     const allBlockers: string[] = [];
 
@@ -138,10 +136,7 @@ serve(async (req) => {
         totalConfidence += output.confidence;
         if (!output.deployment_ready) allBlockers.push(...output.blockers);
 
-        logInfo(FUNCTION, `${scannerName} complete`, { blockers: output.blockers.length, confidence: output.confidence });
-
-      } catch (err) {
-        logError(FUNCTION, `${scannerName} failed`, err, { scan_id: scan.id });
+      } catch (err) {;
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 20;
       }
@@ -165,8 +160,7 @@ serve(async (req) => {
       scanners_run: scanEntries.length, pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Deploy validation failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

@@ -225,9 +225,7 @@ serve(async (req) => {
           const synced = await persistScheduleSync(supabase, participants);
           totalSynced += synced;
           allParticipants.push(...participants);
-        }
-
-        logInfo(FUNCTION, `Synced ${totalSynced} engineers from ${schedules.length} schedules`);
+        };
         return new Response(JSON.stringify({
           synced: totalSynced,
           schedules_found: schedules.length,
@@ -263,8 +261,7 @@ serve(async (req) => {
         let userData = await getOpsGenieUser(profile.email);
 
         if (!userData) {
-          // Create user in OpsGenie
-          logInfo(FUNCTION, `Creating OpsGenie user for ${profile.email}`);
+          // Create user in OpsGenie;
           userData = await createOpsGenieUser(profile.email, profile.full_name, profile.timezone);
         }
 
@@ -322,8 +319,6 @@ serve(async (req) => {
           is_on_call: body.is_on_call ?? true,
         }, { onConflict: 'engineer_id,schedule_date' });
 
-        logInfo(FUNCTION, `Set on-call status`, { engineer_id: body.engineer_id, date: scheduleDate, on_call: body.is_on_call });
-
         return new Response(JSON.stringify({
           set: true,
           engineer_id: body.engineer_id,
@@ -338,7 +333,6 @@ serve(async (req) => {
           return new Response(JSON.stringify({ error: 'alert_payload required' }), { status: 400, headers: corsHeaders });
         }
         const result = await createOpsGenieAlert(body.alert_payload);
-        logInfo(FUNCTION, `Alert created`, { alias: body.alert_payload.alias });
         return new Response(JSON.stringify({ created: true, alert: result.data || result }), { headers: corsHeaders });
       }
 
@@ -349,7 +343,6 @@ serve(async (req) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     const isConfigError = message.includes('OPSGENIE_API_KEY not configured');
-    logError(FUNCTION, 'OpsGenie sync failed', err);
     return new Response(
       JSON.stringify({
         error: message,

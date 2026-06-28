@@ -134,9 +134,7 @@ serve(async (req) => {
 
     if (!scanEntries?.length) {
       return new Response(JSON.stringify({ error: 'No scan entries' }), { status: 404, headers: corsHeaders });
-    }
-
-    logInfo(FUNCTION, `Running isolation`, { incident_id, scanners: scanEntries.length });
+    };
 
     let totalConfidence = 0;
     const allActions: string[] = [];
@@ -165,10 +163,7 @@ serve(async (req) => {
         allActions.push(...output.isolation_actions);
         results.push({ scanner: scannerName, confidence: output.confidence, containment: output.containment_status, findings: output.findings.length });
 
-        logInfo(FUNCTION, `${scannerName} complete`, { findings: output.findings.length, containment: output.containment_status });
-
-      } catch (err) {
-        logError(FUNCTION, `${scannerName} failed`, err, { scan_id: scan.id });
+      } catch (err) {;
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 15;
       }
@@ -185,8 +180,6 @@ serve(async (req) => {
       status: avgConfidence >= 70 ? 'recommended' : 'needs_review',
     });
 
-    logInfo(FUNCTION, `Isolation complete`, { pipeline_id, avg_confidence: avgConfidence, actions: uniqueActions.length });
-
     return new Response(JSON.stringify({
       success: true,
       stage: 'isolate',
@@ -196,8 +189,7 @@ serve(async (req) => {
       pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Isolation failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

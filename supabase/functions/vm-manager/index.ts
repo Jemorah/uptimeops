@@ -31,9 +31,7 @@ serve(async (req) => {
 
       if (vm) {
         await supabase.from('vm_sessions').update({ status: 'running' }).eq('id', vm.id);
-      }
-
-      logInfo(FUNCTION, 'VM created', { vm_id: vmId, vm_session_id: vm?.id });
+      };
       return new Response(JSON.stringify({ created: true, vm }), { headers: corsHeaders });
     }
 
@@ -65,10 +63,8 @@ serve(async (req) => {
         try {
           // Real AWS SSM command execution would go here
           // const ssmResult = await executeViaSSM(vm.provider_vm_id, command);
-          // For now, commands remain in 'running' state until updated by the runner
-          logInfo(FUNCTION, 'Command queued for VM execution', { vm_id: vm.provider_vm_id, cmd_id: cmd?.id });
-        } catch (execErr) {
-          logError(FUNCTION, 'VM execution failed', execErr, { vm_session_id, command: command.slice(0, 100) });
+          // For now, commands remain in 'running' state until updated by the runner;
+        } catch (execErr) {;
           await supabase.from('vm_commands').update({
             status: 'failed',
             output: `Execution error: ${execErr instanceof Error ? execErr.message : String(execErr)}`,
@@ -120,8 +116,6 @@ serve(async (req) => {
         destroyed_at: new Date().toISOString(),
         destroy_reason: body.reason || 'manual_destroy',
       }).eq('id', vm_session_id);
-
-      logInfo(FUNCTION, 'VM destroyed', { vm_session_id, reason: body.reason });
       return new Response(JSON.stringify({ destroyed: true }), { headers: corsHeaders });
     }
 
@@ -144,15 +138,12 @@ serve(async (req) => {
           status: 'timeout', destroyed_at: new Date().toISOString(), destroy_reason: 'auto_timeout_4h',
         }).eq('id', vm.id);
         count++;
-      }
-
-      logInfo(FUNCTION, 'Cleanup complete', { destroyed: count });
+      };
       return new Response(JSON.stringify({ cleaned: count }), { headers: corsHeaders });
     }
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
-  } catch (err) {
-    logError(FUNCTION, 'Request failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

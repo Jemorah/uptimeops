@@ -19,8 +19,6 @@ serve(async (req) => {
     const body = await req.text();
     const event = JSON.parse(body);
 
-    logInfo(FUNCTION, `Received ${event.type}`, { id: event.id });
-
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -91,13 +89,11 @@ serve(async (req) => {
         break;
       }
 
-      default:
-        logInfo(FUNCTION, `Unhandled event type: ${event.type}`);
+      default:;
     }
 
     return new Response(JSON.stringify({ received: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  } catch (err) {
-    logError(FUNCTION, 'Webhook processing failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -62,8 +62,6 @@ serve(async (req) => {
       new_values: { engineer_id, accessed_at: new Date().toISOString() },
     });
 
-    logInfo(FUNCTION, 'Credential accessed', { credential_id, engineer_id, approved });
-
     return new Response(JSON.stringify({
       accessed: true,
       encrypted_payload: cred.encrypted_payload,
@@ -72,8 +70,7 @@ serve(async (req) => {
       expires_at: cred.expires_at,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Decrypt failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

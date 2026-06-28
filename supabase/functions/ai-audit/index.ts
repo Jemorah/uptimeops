@@ -49,8 +49,7 @@ async function buildHashChain(
   incident_id: string,
   scanResults: any[],
   pipeline_id: string
-): Promise<{ root_hash: string; blocks: number }> {
-  logInfo(FUNCTION, 'Building immutable hash chain', { incident_id, scans: scanResults.length });
+): Promise<{ root_hash: string; blocks: number }> {;
 
   // Get existing chain for this incident
   const { data: existingBlocks } = await supabase
@@ -101,8 +100,7 @@ async function buildHashChain(
   // Insert blocks - the immutable trigger prevents any future modification
   if (newBlocks.length > 0) {
     const { error } = await supabase.from('audit_hash_chain').insert(newBlocks);
-    if (error) {
-      logError(FUNCTION, 'Failed to insert hash chain blocks', error);
+    if (error) {;
       throw error;
     }
   }
@@ -113,8 +111,6 @@ async function buildHashChain(
   await supabase.from('incidents')
     .update({ hash_chain_root: rootHash })
     .eq('id', incident_id);
-
-  logInfo(FUNCTION, 'Hash chain built', { incident_id, blocks: newBlocks.length, root_hash: rootHash });
 
   return { root_hash: rootHash, blocks: newBlocks.length };
 }
@@ -314,8 +310,6 @@ serve(async (req) => {
 
     const scanResults = allScans || [];
 
-    logInfo(FUNCTION, 'Running audit', { incident_id, total_scans: scanResults.length });
-
     // Mark audit scan entries as running
     if (scan_ids?.length) {
       await supabase.from('scan_results').update({ status: 'running' }).in('id', scan_ids);
@@ -391,10 +385,6 @@ serve(async (req) => {
       generated_at: new Date().toISOString(),
     }, { onConflict: 'incident_id,pipeline_id' });
 
-    logInfo(FUNCTION, 'Audit complete', {
-      incident_id, blocks, avg_confidence: avgConfidence, root_hash: root_hash.slice(0, 16) + '...',
-    });
-
     return new Response(JSON.stringify({
       success: true,
       stage: 'audit',
@@ -405,8 +395,7 @@ serve(async (req) => {
       pipeline_id,
     }), { headers: corsHeaders });
 
-  } catch (err) {
-    logError(FUNCTION, 'Audit failed', err);
+  } catch (err) {;
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

@@ -50,8 +50,6 @@ serve(async (req) => {
         status: 'active',
       }).select().single();
 
-      logInfo(FUNCTION, 'Link generated', { link_id: link?.id, entity_type, customer_id });
-
       return new Response(JSON.stringify({
         generated: true,
         token, // Return once — client must store securely
@@ -126,8 +124,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
-  } catch (err) {
-    logError(FUNCTION, 'Request failed', err);
+  } catch (err) {;
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });
