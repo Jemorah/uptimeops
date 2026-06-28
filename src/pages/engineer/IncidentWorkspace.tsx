@@ -126,7 +126,7 @@ export function IncidentWorkspace() {
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
         <FileText className="w-8 h-8 text-white/10" />
         <p className="text-xs text-white/40">Incident not found</p>
-        <button onClick={() => navigate('/')} className="text-xs text-[#a3e635] hover:underline">Back to workspace</button>
+        <button onClick={() => navigate('/engineer')} className="text-xs text-[#a3e635] hover:underline">Back to workspace</button>
       </div>
     );
   }
@@ -141,7 +141,7 @@ export function IncidentWorkspace() {
       <div className="shrink-0 border-b border-white/5 bg-[#0e0e14]">
         <div className="flex items-center justify-between px-4 py-2">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="p-1.5 hover:bg-white/5 transition-colors">
+            <button onClick={() => navigate('/engineer')} className="p-1.5 hover:bg-white/5 transition-colors">
               <ChevronLeft className="w-4 h-4 text-white/40" />
             </button>
             <div className="flex items-center gap-2">
@@ -203,10 +203,38 @@ export function IncidentWorkspace() {
             <button onClick={() => setShowAudit(!showAudit)} className={`p-1.5 transition-colors ${showAudit ? 'bg-[#22d3ee]/10 text-[#22d3ee]' : 'hover:bg-white/5 text-white/30'}`}>
               <Eye className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => toast.warning('Escalation sent')} className="flex items-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase bg-white/5 border border-white/10 text-white/40 hover:text-orange-400 transition-colors">
+            <button onClick={async () => {
+              if (!incident) return;
+              try {
+                const { error } = await supabase.from('human_escalations').insert({
+                  incident_id: incident.id,
+                  status: 'pending_assignment',
+                  reason: 'Manual escalation from engineer workspace',
+                  trigger_reason: 'engineer_manual',
+                });
+                if (error) throw error;
+                toast.success('Escalation created — coordinator notified');
+              } catch {
+                toast.error('Failed to create escalation');
+              }
+            }} className="flex items-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase bg-white/5 border border-white/10 text-white/40 hover:text-orange-400 transition-colors">
               <ArrowUpRight className="w-3 h-3" />Escalate
             </button>
-            <button onClick={() => toast.error('Security incident reported')} className="flex items-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors">
+            <button onClick={async () => {
+              if (!incident) return;
+              try {
+                const { error } = await supabase.from('human_escalations').insert({
+                  incident_id: incident.id,
+                  status: 'pending_assignment',
+                  reason: 'Security incident flagged by engineer',
+                  trigger_reason: 'security_finding',
+                });
+                if (error) throw error;
+                toast.success('Security incident reported — P1 escalated');
+              } catch {
+                toast.error('Failed to report security incident');
+              }
+            }} className="flex items-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors">
               <Siren className="w-3 h-3" />Emergency
             </button>
           </div>

@@ -166,13 +166,13 @@ export function StatusPage() {
         </div>
 
         <div className="text-center">
-          <a
-            href="#"
+          <button
+            onClick={() => window.open('mailto:support@uptimeops.io?subject=Subscribe%20to%20Status%20Updates', '_blank')}
             className="inline-flex items-center gap-2 text-sm text-lime hover:underline"
           >
             Subscribe to Status Updates
             <ArrowUpRight className="w-4 h-4" />
-          </a>
+          </button>
         </div>
       </div>
     </div>

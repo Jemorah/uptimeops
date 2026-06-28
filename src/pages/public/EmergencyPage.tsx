@@ -602,10 +602,10 @@ export function EmergencyPage() {
                     <Eye className="w-3.5 h-3.5" />
                     View Full Dashboard
                   </Link>
-                  <button onClick={() => {}} className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-white/10 text-white/40 text-xs font-bold uppercase hover:border-white/20 transition-colors">
+                  <Link to="/customer/vault" className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-white/10 text-white/40 text-xs font-bold uppercase hover:border-white/20 hover:text-white/60 transition-colors">
                     <RefreshCw className="w-3.5 h-3.5" />
                     Revoke Credentials
-                  </button>
+                  </Link>
                 </div>
               </div>
             )}

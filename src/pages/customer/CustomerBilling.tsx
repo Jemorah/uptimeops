@@ -389,7 +389,7 @@ export function CustomerBilling() {
                   {features.map(f => (<li key={f} className="flex items-start gap-2 text-[11px] text-white/45"><Check className="w-3 h-3 text-lime mt-0.5 shrink-0" />{f}</li>))}
                 </ul>
                 {isCurrent ? (
-                  <button disabled className="w-full py-2.5 rounded-lg bg-lime/8 border border-lime/15 text-lime/60 text-xs font-bold uppercase tracking-wider cursor-default">Active</button>
+                  <div className="w-full py-2.5 rounded-lg bg-lime/8 border border-lime/15 text-lime/60 text-xs font-bold uppercase tracking-wider text-center">Active</div>
                 ) : (
                   <div className="flex gap-2">
                     <button
