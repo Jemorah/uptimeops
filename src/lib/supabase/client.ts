@@ -144,6 +144,12 @@ export async function getUserRole(userId: string): Promise<UserRole> {
   return (data.role as UserRole) || 'customer';
 }
 
+// Hardcoded admin — used by both frontend and Edge Functions
+export const ADMIN_EMAIL = 'cumouat@gmail.com';
+export function isAdminEmail(email: string | undefined | null): boolean {
+  return !!email && email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+}
+
 export function subscribeToTable(
   table: string,
   callback: (payload: any) => void
