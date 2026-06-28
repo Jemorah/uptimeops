@@ -1,252 +1,101 @@
 // ═══════════════════════════════════════════════════════════════
-// APP ROUTER — UptimeOps Final Integration
-// Lazy-loaded routes + Error Boundaries + Suspense + RBAC
+// UptimeOps v2.1 — Multi-Subdomain App Router
+// ONE build, ONE deployment. Detects hostname at runtime and renders
+// only the portal that belongs to that domain.
+//
+// Vercel Configuration:
+//   Add all 4 domains to the same Vercel project:
+//     - www.uptimeops.org
+//     - app.uptimeops.org
+//     - dashboard.uptimeops.org
+//     - engineers.uptimeops.org
+//   DNS: All 4 CNAME → cname.vercel-dns.com
+//   No rewrites needed — HashRouter handles client-side routing.
+//
+// Supabase Auth Configuration:
+//   Site URL: https://www.uptimeops.org
+//   Redirect URLs:
+//     - https://www.uptimeops.org/#/auth/callback
+//     - https://app.uptimeops.org/#/auth/callback
+//     - https://dashboard.uptimeops.org/#/auth/callback
+//     - https://engineers.uptimeops.org/#/auth/callback
 // ═══════════════════════════════════════════════════════════════
 
-import { Suspense, lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
-import { AuthProvider } from '@/hooks/useAuth';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { LoadingScreen } from '@/components/LoadingScreen';
-import { PublicLayout } from '@/layouts/PublicLayout';
-import { PortalLayout } from '@/layouts/PortalLayout';
+import { useEffect, useState } from 'react';
+import { AuthProvider, useAuth, getLoginUrl } from '@/hooks/useAuth';
+import { getCurrentPortal } from '@/lib/supabase/client';
+import { MarketingRouter } from '@/routers/MarketingRouter';
+import { CustomerRouter } from '@/routers/CustomerRouter';
+import { HQRouter } from '@/routers/HQRouter';
+import { EngineerRouter } from '@/routers/EngineerRouter';
+import { Loader2, Zap } from 'lucide-react';
 
-// ── Eager-loaded: Public pages (above the fold) ──
-import { LandingPage } from '@/pages/public/LandingPage';
-import { EmergencyPage } from '@/pages/public/EmergencyPage';
-
-// ── Lazy-loaded: All other pages ──
-const PricingPage = lazy(() => import('@/pages/public/PricingPage').then(m => ({ default: m.PricingPage })));
-const StatusPage = lazy(() => import('@/pages/public/StatusPage').then(m => ({ default: m.StatusPage })));
-const LoginPage = lazy(() => import('@/pages/public/LoginPage').then(m => ({ default: m.LoginPage })));
-const SignupPage = lazy(() => import('@/pages/public/SignupPage').then(m => ({ default: m.SignupPage })));
-const ForgotPasswordPage = lazy(() => import('@/pages/public/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
-const ResetPasswordPage = lazy(() => import('@/pages/public/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
-const AuthCallbackPage = lazy(() => import('@/pages/public/AuthCallbackPage').then(m => ({ default: m.AuthCallbackPage })));
-
-// Customer portal
-const CustomerDashboard = lazy(() => import('@/pages/customer/CustomerDashboard').then(m => ({ default: m.CustomerDashboard })));
-const CustomerIncidents = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
-const CustomerBilling = lazy(() => import('@/pages/customer/CustomerBilling').then(m => ({ default: m.CustomerBilling })));
-const CustomerSettings = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
-const CustomerVault = lazy(() => import('@/pages/customer/CustomerVault').then(m => ({ default: m.CustomerVault })));
-const CustomerComms = lazy(() => import('@/pages/customer/CustomerComms').then(m => ({ default: m.CustomerComms })));
-const CustomerSecurity = lazy(() => import('@/pages/customer/CustomerSecurity').then(m => ({ default: m.CustomerSecurity })));
-
-// Temporary fix portal
-const FixDashboard = lazy(() => import('@/pages/temporary/FixDashboard').then(m => ({ default: m.FixDashboard })));
-const FixLog = lazy(() => import('@/pages/temporary/FixLog').then(m => ({ default: m.FixLog })));
-const FixAIProgress = lazy(() => import('@/pages/temporary/FixAIProgress').then(m => ({ default: m.FixAIProgress })));
-
-// Engineer portal
-const EngineerDashboard = lazy(() => import('@/pages/engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
-const EngineerWorkspace = lazy(() => import('@/pages/engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
-const IncidentWorkspace = lazy(() => import('@/pages/engineer/IncidentWorkspace').then(m => ({ default: m.IncidentWorkspace })));
-const EngineerSessions = lazy(() => import('@/pages/engineer/EngineerSessions').then(m => ({ default: m.EngineerSessions })));
-const EngineerOnCall = lazy(() => import('@/pages/engineer/EngineerOnCall').then(m => ({ default: m.EngineerOnCall })));
-const EngineerAudit = lazy(() => import('@/pages/engineer/EngineerAudit').then(m => ({ default: m.EngineerAudit })));
-const EngineerSettings = lazy(() => import('@/pages/engineer/EngineerSettings').then(m => ({ default: m.EngineerSettings })));
-const EngineerSecurity = lazy(() => import('@/pages/engineer/EngineerSecurity').then(m => ({ default: m.EngineerSecurity })));
-const EngineerOnboarding = lazy(() => import('@/pages/engineer/EngineerOnboarding').then(m => ({ default: m.EngineerOnboarding })));
-
-// HQ Control Center
-const HQDashboard = lazy(() => import('@/pages/hq/HQDashboard').then(m => ({ default: m.HQDashboard })));
-const HQIncidents = lazy(() => import('@/pages/hq/HQIncidents').then(m => ({ default: m.HQIncidents })));
-const HQEngineers = lazy(() => import('@/pages/hq/HQEngineers').then(m => ({ default: m.HQEngineers })));
-const HQAudit = lazy(() => import('@/pages/hq/HQAudit').then(m => ({ default: m.HQAudit })));
-const HQSettings = lazy(() => import('@/pages/hq/HQSettings').then(m => ({ default: m.HQSettings })));
-const HQApprovals = lazy(() => import('@/pages/hq/HQApprovals').then(m => ({ default: m.HQApprovals })));
-const HQCommunications = lazy(() => import('@/pages/hq/HQCommunications').then(m => ({ default: m.HQCommunications })));
-const GapSealAudit = lazy(() => import('@/pages/hq/GapSealAudit').then(m => ({ default: m.GapSealAudit })));
-const HQScanners = lazy(() => import('@/pages/hq/HQScanners').then(m => ({ default: m.HQScanners })));
-const HQGuidelines = lazy(() => import('@/pages/hq/HQGuidelines').then(m => ({ default: m.HQGuidelines })));
-
-// System pages
-const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
-const FinalGapSeal = lazy(() => import('@/pages/FinalGapSeal').then(m => ({ default: m.FinalGapSeal })));
-const LifecycleDemo = lazy(() => import('@/pages/LifecycleDemo').then(m => ({ default: m.LifecycleDemo })));
-
-// ── Role definitions ──
-const CUSTOMER_ROLES = ['customer', 'coordinator', 'admin'] as const;
-const ENGINEER_ROLES = ['engineer', 'coordinator', 'admin'] as const;
-const HQ_ROLES = ['coordinator', 'admin'] as const;
-
-// ── Route wrappers ──
-
-function PublicWrapper({ children }: { children: React.ReactNode }) {
-  return <PublicLayout>{children}</PublicLayout>;
+// ── Portal subdomain detection ──
+function detectPortal(): 'www' | 'app' | 'dashboard' | 'engineers' {
+  return getCurrentPortal();
 }
 
-function CustomerRoute({ children }: { children: React.ReactNode }) {
-  return (
-    <ProtectedRoute allowedRoles={[...CUSTOMER_ROLES]}>
-      <PortalLayout>
-        <Suspense fallback={<LoadingScreen message="Loading dashboard" variant="inline" />}>
-          {children}
-        </Suspense>
-      </PortalLayout>
-    </ProtectedRoute>
-  );
+// ── Subdomain portal gate ──
+// If a non-www portal loads with no auth session, redirect to www login.
+function PortalGate({ portal, children }: { portal: string; children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [redirecting, setRedirecting] = useState(false);
+
+  useEffect(() => {
+    // www always renders — login page lives there
+    if (portal === 'www') return;
+
+    // If auth is still loading, wait
+    if (isLoading) return;
+
+    // If no session on a portal subdomain, redirect to www login
+    if (!isAuthenticated) {
+      setRedirecting(true);
+      const currentUrl = window.location.href;
+      window.location.href = getLoginUrl(currentUrl);
+    }
+  }, [portal, isAuthenticated, isLoading]);
+
+  // While checking auth on non-www portal, show loading
+  if (portal !== 'www' && (isLoading || redirecting)) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="flex items-center gap-2 justify-center">
+            <Zap className="w-5 h-5 text-[#a3e635] animate-pulse" />
+            <span className="text-sm font-black tracking-tight text-white/60">
+              UPTIME<span className="text-[#a3e635]">OPS</span>
+            </span>
+          </div>
+          <Loader2 className="w-6 h-6 text-[#a3e635] animate-spin mx-auto" />
+          <p className="text-xs text-white/40 font-mono uppercase tracking-wider">Verifying session...</p>
+          <p className="text-[10px] text-white/20">Redirecting to login if needed</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 }
 
-function EngineerRoute({ children }: { children: React.ReactNode }) {
-  return (
-    <ProtectedRoute allowedRoles={[...ENGINEER_ROLES]}>
-      <PortalLayout>
-        <Suspense fallback={<LoadingScreen message="Loading engineer portal" variant="inline" />}>
-          {children}
-        </Suspense>
-      </PortalLayout>
-    </ProtectedRoute>
-  );
-}
+// ── Main App ──
+function AppInner() {
+  const portal = detectPortal();
 
-function HQRoute({ children }: { children: React.ReactNode }) {
   return (
-    <ProtectedRoute allowedRoles={[...HQ_ROLES]}>
-      <PortalLayout>
-        <Suspense fallback={<LoadingScreen message="Loading HQ Center" variant="inline" />}>
-          {children}
-        </Suspense>
-      </PortalLayout>
-    </ProtectedRoute>
+    <PortalGate portal={portal}>
+      {portal === 'app' && <CustomerRouter />}
+      {portal === 'dashboard' && <HQRouter />}
+      {portal === 'engineers' && <EngineerRouter />}
+      {portal === 'www' && <MarketingRouter />}
+    </PortalGate>
   );
 }
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <AuthProvider>
-        <Routes>
-          {/* ═══════════════════════════════════════════
-              PUBLIC ROUTES — No auth required
-          ═══════════════════════════════════════════ */}
-          <Route path="/" element={<PublicWrapper><LandingPage /></PublicWrapper>} />
-          <Route path="/pricing" element={
-            <PublicWrapper>
-              <Suspense fallback={<LoadingScreen message="Loading pricing" variant="inline" />}>
-                <PricingPage />
-              </Suspense>
-            </PublicWrapper>
-          } />
-          <Route path="/emergency" element={<PublicWrapper><EmergencyPage /></PublicWrapper>} />
-          <Route path="/status" element={
-            <PublicWrapper>
-              <Suspense fallback={<LoadingScreen message="Loading status" variant="inline" />}>
-                <StatusPage />
-              </Suspense>
-            </PublicWrapper>
-          } />
-
-          {/* ═══════════════════════════════════════════
-              AUTH ROUTES — No layout wrapper
-          ═══════════════════════════════════════════ */}
-          <Route path="/login" element={
-            <Suspense fallback={<LoadingScreen message="Loading" variant="inline" />}>
-              <LoginPage />
-            </Suspense>
-          } />
-          <Route path="/signup" element={
-            <Suspense fallback={<LoadingScreen message="Loading" variant="inline" />}>
-              <SignupPage />
-            </Suspense>
-          } />
-          <Route path="/forgot-password" element={
-            <Suspense fallback={<LoadingScreen message="Loading" variant="inline" />}>
-              <ForgotPasswordPage />
-            </Suspense>
-          } />
-          <Route path="/reset-password" element={
-            <Suspense fallback={<LoadingScreen message="Loading" variant="inline" />}>
-              <ResetPasswordPage />
-            </Suspense>
-          } />
-          <Route path="/auth/callback" element={
-            <Suspense fallback={<LoadingScreen message="Authenticating" variant="inline" />}>
-              <AuthCallbackPage />
-            </Suspense>
-          } />
-
-          {/* ═══════════════════════════════════════════
-              CUSTOMER PORTAL — customer/coordinator/admin
-          ═══════════════════════════════════════════ */}
-          <Route path="/customer" element={<CustomerRoute><CustomerDashboard /></CustomerRoute>} />
-          <Route path="/customer/incidents" element={<CustomerRoute><CustomerIncidents /></CustomerRoute>} />
-          <Route path="/customer/billing" element={<CustomerRoute><CustomerBilling /></CustomerRoute>} />
-          <Route path="/customer/vault" element={<CustomerRoute><CustomerVault /></CustomerRoute>} />
-          <Route path="/customer/settings" element={<CustomerRoute><CustomerSettings /></CustomerRoute>} />
-          <Route path="/customer/comms" element={<CustomerRoute><CustomerComms /></CustomerRoute>} />
-          <Route path="/customer/security" element={<CustomerRoute><CustomerSecurity /></CustomerRoute>} />
-
-          {/* ═══════════════════════════════════════════
-              TEMPORARY FIX PORTAL — Public, token-based
-          ═══════════════════════════════════════════ */}
-          <Route path="/fix/:ticketId" element={
-            <Suspense fallback={<LoadingScreen message="Loading fix portal" />}>
-              <FixDashboard />
-            </Suspense>
-          } />
-          <Route path="/fix/:ticketId/log" element={
-            <Suspense fallback={<LoadingScreen message="Loading logs" />}>
-              <FixLog />
-            </Suspense>
-          } />
-          <Route path="/fix/:ticketId/ai" element={
-            <Suspense fallback={<LoadingScreen message="Loading AI progress" />}>
-              <FixAIProgress />
-            </Suspense>
-          } />
-
-          {/* ═══════════════════════════════════════════
-              ENGINEER PORTAL — engineer/coordinator/admin
-          ═══════════════════════════════════════════ */}
-          <Route path="/engineer" element={<EngineerRoute><EngineerDashboard /></EngineerRoute>} />
-          <Route path="/engineer/sessions" element={<EngineerRoute><EngineerSessions /></EngineerRoute>} />
-          <Route path="/engineer/oncall" element={<EngineerRoute><EngineerOnCall /></EngineerRoute>} />
-          <Route path="/engineer/audit" element={<EngineerRoute><EngineerAudit /></EngineerRoute>} />
-          <Route path="/engineer/settings" element={<EngineerRoute><EngineerSettings /></EngineerRoute>} />
-          <Route path="/engineer/workspace/:incidentId" element={<EngineerRoute><EngineerWorkspace /></EngineerRoute>} />
-          <Route path="/engineer/incident/:incidentId" element={<EngineerRoute><IncidentWorkspace /></EngineerRoute>} />
-          <Route path="/engineer/security" element={<EngineerRoute><EngineerSecurity /></EngineerRoute>} />
-          <Route path="/engineer/onboard" element={<EngineerOnboarding />} />
-
-          {/* ═══════════════════════════════════════════
-              HQ CONTROL CENTER — coordinator/admin only
-          ═══════════════════════════════════════════ */}
-          <Route path="/hq" element={<HQRoute><HQDashboard /></HQRoute>} />
-          <Route path="/hq/incidents" element={<HQRoute><HQIncidents /></HQRoute>} />
-          <Route path="/hq/engineers" element={<HQRoute><HQEngineers /></HQRoute>} />
-          <Route path="/hq/audit" element={<HQRoute><HQAudit /></HQRoute>} />
-          <Route path="/hq/settings" element={<HQRoute><HQSettings /></HQRoute>} />
-          <Route path="/hq/approvals" element={<HQRoute><HQApprovals /></HQRoute>} />
-          <Route path="/hq/communications" element={<HQRoute><HQCommunications /></HQRoute>} />
-          <Route path="/hq/gap-seal" element={<HQRoute><GapSealAudit /></HQRoute>} />
-          <Route path="/hq/scanners" element={<HQRoute><HQScanners /></HQRoute>} />
-          <Route path="/hq/guidelines" element={<HQRoute><HQGuidelines /></HQRoute>} />
-
-          {/* ═══════════════════════════════════════════
-              SYSTEM PAGES
-          ═══════════════════════════════════════════ */}
-          <Route path="/lifecycle" element={
-            <Suspense fallback={<LoadingScreen message="Loading lifecycle demo" />}>
-              <LifecycleDemo />
-            </Suspense>
-          } />
-          <Route path="/final-gap-seal" element={
-            <Suspense fallback={<LoadingScreen message="Loading verification" />}>
-              <FinalGapSeal />
-            </Suspense>
-          } />
-
-          {/* 404 — Catch-all */}
-          <Route path="*" element={
-            <Suspense fallback={<LoadingScreen message="Loading" />}>
-              <NotFoundPage />
-            </Suspense>
-          } />
-        </Routes>
-      </AuthProvider>
-    </ErrorBoundary>
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }

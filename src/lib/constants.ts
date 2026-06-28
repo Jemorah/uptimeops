@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// CONSTANTS — UptimeOps
-// Centralized configuration values
+// CONSTANTS — UptimeOps Multi-Subdomain
+// Centralized configuration. All subdomain URLs derived from here.
 // ═══════════════════════════════════════════════════════════════
 
 // ── App ──
@@ -9,35 +9,54 @@ export const APP_VERSION = __APP_VERSION__;
 export const BUILD_TIME = __BUILD_TIME__;
 export const SUPPORT_EMAIL = 'support@uptimeops.com' as const;
 
+// ── Subdomain Configuration ──
+// All four portals share one Vercel deployment. DNS CNAME → cname.vercel-dns.com
+export const DOMAINS = {
+  www:         'https://www.uptimeops.org',
+  app:         'https://app.uptimeops.org',
+  dashboard:   'https://dashboard.uptimeops.org',
+  engineers:   'https://engineers.uptimeops.org',
+} as const;
+
+// Get domain for current environment (localhost support)
+function currentDomain(key: keyof typeof DOMAINS): string {
+  if (typeof window === 'undefined') return DOMAINS[key];
+  const host = window.location.hostname;
+  // Localhost: all subdomains run on same host with port/hash routing
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return `http://${host}:5173`; // Vite dev server
+  }
+  return DOMAINS[key];
+}
+
 // ── URLs ──
 export const URLS = {
-  app: import.meta.env.VITE_APP_URL || 'https://uptimeops.com',
-  api: import.meta.env.VITE_API_URL || '',
+  app: currentDomain('app'),
+  dashboard: currentDomain('dashboard'),
+  engineers: currentDomain('engineers'),
+  www: currentDomain('www'),
   emergency: '/emergency',
   pricing: '/pricing',
   login: '/login',
-  customerPortal: '/customer',
-  engineerPortal: '/engineer',
-  hqPortal: '/hq',
 } as const;
 
 // ── Timeouts ──
 export const TIMEOUTS = {
-  api: 30000,           // 30s API timeout
-  credential: 4 * 3600000,  // 4h credential session
-  credentialApproval: 5 * 60000,  // 5m approval window
-  engineerResponse: 30 * 60000,   // 30m engineer assignment timeout
-  autoDestroy: 4 * 3600000,       // 4h VM auto-destroy
-  tempLink: 72 * 3600000,         // 72h temporary link expiry
-  archiveAfter: 30 * 86400000,    // 30d archive old data
-  auditLogRetention: 90 * 86400000, // 90d log retention
+  api: 30000,
+  credential: 4 * 3600000,
+  credentialApproval: 5 * 60000,
+  engineerResponse: 30 * 60000,
+  autoDestroy: 4 * 3600000,
+  tempLink: 72 * 3600000,
+  archiveAfter: 30 * 86400000,
+  auditLogRetention: 90 * 86400000,
 } as const;
 
 // ── AI Pipeline ──
 export const AI = {
-  autoDeployThreshold: 90,     // Confidence % for auto-deploy
-  maxRetries: 3,               // Per-agent retry count
-  stepTimeoutMs: 60000,        // 60s per step
+  autoDeployThreshold: 90,
+  maxRetries: 3,
+  stepTimeoutMs: 60000,
   agents: ['TRIAGE', 'ISOLATE', 'REPAIR', 'VALIDATE', 'DEPLOY', 'AUDIT'] as const,
   models: {
     primary: 'claude-3-5-sonnet-20241022',
@@ -60,13 +79,18 @@ export const STRIPE_PRODUCTS = {
 } as const;
 
 // ── Stripe Publishable Key ──
-// Vercel Stripe integration uses NEXT_PUBLIC_ prefix (Next.js convention)
-// We also check STRIPE_PUBLISHABLE_KEY and VITE_ prefixed variants
 export const STRIPE_KEY =
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
   import.meta.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
   import.meta.env.STRIPE_PUBLISHABLE_KEY ||
   '';
+
+// ── Stripe Return URLs (subdomain-aware) ──
+// Customer billing redirects back to app.uptimeops.org
+export function getStripeReturnUrl(success: boolean): string {
+  const base = currentDomain('app');
+  return `${base}/#/customer/billing?${success ? 'success=true' : 'canceled=true'}`;
+}
 
 // ── Pricing ──
 export const PLANS = {
@@ -111,30 +135,7 @@ export const SEVERITY = {
   P4: { label: 'P4', name: 'P4_LOW', color: '#22c55e', responseSla: 240 },
 } as const;
 
-// ── Incident Status ──
-export const INCIDENT_STATUS = [
-  'lead_capture',
-  'payment_pending',
-  'credential_submission',
-  'triage',
-  'isolate',
-  'repair',
-  'validate',
-  'coordinator_approval',
-  'deploy',
-  'smoke_test',
-  'verify_fix',
-  'continuous_monitor',
-] as const;
-
-// ── Rate Limits ──
-export const RATE_LIMITS = {
-  public: { requests: 100, window: 60 },      // 100 req/min per IP
-  authenticated: { requests: 500, window: 60 }, // 500 req/min per user
-  strict: { requests: 10, window: 60 },         // 10 req/min for sensitive ops
-} as const;
-
-// ── Colors (for charts/gradient) ──
+// ── Colors ──
 export const CHART_COLORS = {
   lime: '#d1ff00',
   cyan: '#00f0ff',
@@ -146,30 +147,16 @@ export const CHART_COLORS = {
   yellow: '#eab308',
 } as const;
 
-// ── Communication Channels ──
-export const CHANNELS = ['email', 'sms', 'push', 'dashboard'] as const;
-
-// ── Security ──
+// ── CSP ──
 export const CSP = {
   'default-src': "'self'",
   'script-src': "'self' 'unsafe-inline'",
   'style-src': "'self' 'unsafe-inline'",
   'img-src': "'self' data: https:",
   'font-src': "'self'",
-  'connect-src': "'self' https://*.supabase.co https://api.stripe.com https://*.sentry.io",
+  'connect-src': "'self' https://*.supabase.co https://api.stripe.com https://*.sentry.io https://api.opsgenie.com",
   'frame-src': "https://*.stripe.com",
   'object-src': "'none'",
   'base-uri': "'self'",
   'form-action': "'self'",
 } as const;
-
-// ── LocalStorage Keys ──
-export const STORAGE_KEYS = {
-  authSession: 'uptimeops-auth-session',
-  store: 'uptimeops-store',
-  theme: 'uptimeops-theme',
-  sidebarCollapsed: 'uptimeops-sidebar-collapsed',
-} as const;
-// deploy trigger: Sat Jun 27 18:57:54 CST 2026
-// deploy trigger
-// deploy trigger 1782585587

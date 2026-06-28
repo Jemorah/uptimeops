@@ -1,12 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
-// PROTECTED ROUTE — Guards access by authentication + role
-// Shows loading spinner while auth state settles, then redirects
+// PROTECTED ROUTE — Multi-Subdomain
+// Guards by auth + role. Unauthenticated users redirected to www login.
+// Wrong-role users redirected to their correct subdomain.
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth, useRequireAuth } from '@/hooks/useAuth';
+import { useAuth, getLoginUrl, redirectToRoleSubdomain } from '@/hooks/useAuth';
 import type { UserRole } from '@/lib/supabase/client';
+import { getSubdomainForRole, getCurrentPortal } from '@/lib/supabase/client';
 import { Loader2, Zap, ShieldAlert } from 'lucide-react';
 
 interface Props {
@@ -14,62 +15,54 @@ interface Props {
   allowedRoles?: UserRole[];
 }
 
-// Grace period: brief wait for auth state to settle before redirecting.
-// Reduced to 100ms since signIn() now loads state synchronously.
 const AUTH_SETTLE_MS = 100;
 
 export function ProtectedRoute({ children, allowedRoles }: Props) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { isAuthenticated, isLoading, user } = useAuth();
-  const { authorized, checking } = useRequireAuth(allowedRoles);
-
-  // Show a brief "settling" state even when isLoading is false,
-  // to give onAuthStateChange time to update the auth context.
+  const { isAuthenticated, isLoading, user, role } = useAuth();
   const [settling, setSettling] = useState(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // If we're still loading auth, keep settling
-    if (isLoading || checking) {
-      setSettling(true);
-      return;
-    }
+    if (isLoading) { setSettling(true); return; }
+    timerRef.current = setTimeout(() => { setSettling(false); }, AUTH_SETTLE_MS);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [isLoading]);
 
-    // Auth has settled — start a short grace period
-    timerRef.current = setTimeout(() => {
-      setSettling(false);
-    }, AUTH_SETTLE_MS);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [isLoading, checking]);
-
-  // After settling, redirect if not authenticated or not authorized
+  // After settling, handle redirects
   useEffect(() => {
     if (settling) return;
 
     if (!isAuthenticated) {
-      navigate('/login?redirect=' + encodeURIComponent(location.pathname), { replace: true });
+      // Redirect to www login with current URL as redirect_to
+      const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+      window.location.href = getLoginUrl(currentUrl);
       return;
     }
 
-    if (!authorized) {
-      navigate('/', { replace: true });
-    }
-  }, [settling, isAuthenticated, authorized, navigate, location.pathname]);
+    if (allowedRoles && role && !allowedRoles.includes(role)) {
+      // Wrong role — redirect to their correct subdomain
+      const currentPortal = getCurrentPortal();
+      const correctDomain = getSubdomainForRole(role);
+      const portalDomain = Object.entries({
+        app: 'app.uptimeops.org',
+        dashboard: 'dashboard.uptimeops.org',
+        engineers: 'engineers.uptimeops.org',
+      }).find(([, d]) => d === correctDomain)?.[0];
 
-  // While settling or loading, show a loading screen
-  if (isLoading || checking || settling) {
+      if (portalDomain && currentPortal !== portalDomain && currentPortal !== 'www') {
+        redirectToRoleSubdomain(role, null);
+      }
+    }
+  }, [settling, isAuthenticated, allowedRoles, role]);
+
+  // Loading state
+  if (isLoading || settling) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center space-y-4">
           <div className="flex items-center gap-2 justify-center">
             <Zap className="w-5 h-5 text-[#a3e635] animate-pulse" />
-            <span className="text-sm font-black tracking-tight text-white/60">
-              UPTIME<span className="text-[#a3e635]">OPS</span>
-            </span>
+            <span className="text-sm font-black tracking-tight text-white/60">UPTIME<span className="text-[#a3e635]">OPS</span></span>
           </div>
           <Loader2 className="w-6 h-6 text-[#a3e635] animate-spin mx-auto" />
           <p className="text-xs text-white/40 font-mono uppercase tracking-wider">Authenticating...</p>
@@ -78,24 +71,27 @@ export function ProtectedRoute({ children, allowedRoles }: Props) {
     );
   }
 
-  // Not authenticated — will be redirected by useEffect above
+  // Not authenticated — will redirect via useEffect above
   if (!isAuthenticated) return null;
 
-  // Not authorized — will be redirected by useEffect above
-  if (!authorized) {
+  // Wrong role
+  if (allowedRoles && role && !allowedRoles.includes(role)) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center space-y-4 max-w-sm mx-auto px-4">
           <ShieldAlert className="w-10 h-10 text-red-400 mx-auto" />
           <h2 className="text-lg font-bold text-white">Access Denied</h2>
           <p className="text-sm text-white/50">
-            Your account ({user?.email}) does not have permission to access this page.
+            Your account ({user?.email}) does not have permission for this portal.
           </p>
+          <p className="text-xs text-white/30">Role: {role}</p>
           <button
-            onClick={() => navigate('/', { replace: true })}
+            onClick={() => {
+              if (role && role !== 'public') redirectToRoleSubdomain(role, null);
+            }}
             className="text-xs text-[#a3e635] hover:underline"
           >
-            Go to home page
+            Go to my portal
           </button>
         </div>
       </div>

@@ -3,7 +3,7 @@
 // Adapts links based on user role (customer/engineer/coordinator)
 // ═══════════════════════════════════════════════════════════════
 
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 
 import {
@@ -21,66 +21,70 @@ interface NavItem {
   icon: React.ElementType;
 }
 
+// Multi-subdomain: routes are relative to subdomain root.
+// Customer on app.uptimeops.org uses /, /incidents, etc.
 const NAV_CONFIG: Record<string, NavItem[]> = {
   customer: [
-    { label: 'Dashboard', path: '/customer', icon: LayoutDashboard },
-    { label: 'Incidents', path: '/customer/incidents', icon: AlertTriangle },
-    { label: 'Billing', path: '/customer/billing', icon: CreditCard },
-    { label: 'Vault', path: '/customer/vault', icon: Shield },
-    { label: 'Messages', path: '/customer/comms', icon: MessageSquare },
-    { label: 'Security', path: '/customer/security', icon: ShieldCheck },
-    { label: 'Settings', path: '/customer/settings', icon: Settings },
+    { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { label: 'Incidents', path: '/incidents', icon: AlertTriangle },
+    { label: 'Billing', path: '/billing', icon: CreditCard },
+    { label: 'Vault', path: '/vault', icon: Shield },
+    { label: 'Messages', path: '/comms', icon: MessageSquare },
+    { label: 'Security', path: '/security', icon: ShieldCheck },
+    { label: 'Settings', path: '/settings', icon: Settings },
   ],
   engineer: [
-    { label: 'Workspace', path: '/engineer', icon: LayoutDashboard },
-    { label: 'My Incidents', path: '/engineer/sessions', icon: AlertTriangle },
-    { label: 'Terminal', path: '/engineer/workspace/default', icon: Terminal },
-    { label: 'Credentials', path: '/engineer/audit', icon: Shield },
-    { label: 'On-Call', path: '/engineer/oncall', icon: Radio },
-    { label: 'Security', path: '/engineer/security', icon: ScanLine },
-    { label: 'Settings', path: '/engineer/settings', icon: Settings },
+    { label: 'Workspace', path: '/', icon: LayoutDashboard },
+    { label: 'My Incidents', path: '/sessions', icon: AlertTriangle },
+    { label: 'Terminal', path: '/workspace/default', icon: Terminal },
+    { label: 'Credentials', path: '/audit', icon: Shield },
+    { label: 'On-Call', path: '/oncall', icon: Radio },
+    { label: 'Security', path: '/security', icon: ScanLine },
+    { label: 'Settings', path: '/settings', icon: Settings },
   ],
   coordinator: [
-    { label: 'Control Center', path: '/hq', icon: LayoutDashboard },
-    { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle },
-    { label: 'Analytics', path: '/hq/approvals', icon: BarChart3 },
-    { label: 'Engineers', path: '/hq/engineers', icon: Users },
-    { label: 'Approvals', path: '/hq/approvals', icon: CheckSquare },
-    { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList },
-    { label: 'Comms', path: '/hq/communications', icon: MessageSquare },
-    { label: 'Gap Seal', path: '/hq/gap-seal', icon: Shield },
-    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine },
-    { label: 'Guidelines', path: '/hq/guidelines', icon: FileCode2 },
-    { label: 'Settings', path: '/hq/settings', icon: Settings },
+    { label: 'Control Center', path: '/', icon: LayoutDashboard },
+    { label: 'Incidents', path: '/incidents', icon: AlertTriangle },
+    { label: 'Analytics', path: '/approvals', icon: BarChart3 },
+    { label: 'Engineers', path: '/engineers', icon: Users },
+    { label: 'Approvals', path: '/approvals', icon: CheckSquare },
+    { label: 'Audit Trail', path: '/audit', icon: ClipboardList },
+    { label: 'Comms', path: '/communications', icon: MessageSquare },
+    { label: 'Gap Seal', path: '/gap-seal', icon: Shield },
+    { label: 'Scanners', path: '/scanners', icon: ScanLine },
+    { label: 'Guidelines', path: '/guidelines', icon: FileCode2 },
+    { label: 'Settings', path: '/settings', icon: Settings },
   ],
   admin: [
-    { label: 'Control Center', path: '/hq', icon: LayoutDashboard },
-    { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle },
-    { label: 'Analytics', path: '/hq/approvals', icon: BarChart3 },
-    { label: 'Engineers', path: '/hq/engineers', icon: Users },
-    { label: 'Approvals', path: '/hq/approvals', icon: CheckSquare },
-    { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList },
-    { label: 'Comms', path: '/hq/communications', icon: MessageSquare },
-    { label: 'Gap Seal', path: '/hq/gap-seal', icon: Shield },
-    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine },
-    { label: 'Guidelines', path: '/hq/guidelines', icon: FileCode2 },
-    { label: 'Settings', path: '/hq/settings', icon: Settings },
+    { label: 'Control Center', path: '/', icon: LayoutDashboard },
+    { label: 'Incidents', path: '/incidents', icon: AlertTriangle },
+    { label: 'Analytics', path: '/approvals', icon: BarChart3 },
+    { label: 'Engineers', path: '/engineers', icon: Users },
+    { label: 'Approvals', path: '/approvals', icon: CheckSquare },
+    { label: 'Audit Trail', path: '/audit', icon: ClipboardList },
+    { label: 'Comms', path: '/communications', icon: MessageSquare },
+    { label: 'Gap Seal', path: '/gap-seal', icon: Shield },
+    { label: 'Scanners', path: '/scanners', icon: ScanLine },
+    { label: 'Guidelines', path: '/guidelines', icon: FileCode2 },
+    { label: 'Settings', path: '/settings', icon: Settings },
   ],
 };
 
-export function PortalLayout({ children }: { children: React.ReactNode }) {
+interface PortalLayoutProps {
+  portalType: 'customer' | 'engineer' | 'coordinator' | 'admin';
+}
+
+export function PortalLayout({ portalType }: PortalLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { role, signOut } = useAuth();
+  const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
-  const navItems = NAV_CONFIG[role] || NAV_CONFIG.customer;
+  const navItems = NAV_CONFIG[portalType] || NAV_CONFIG.customer;
 
   const isActive = (path: string) => {
-    if (path === '/customer' && location.pathname === '/customer') return true;
-    if (path === '/engineer' && location.pathname === '/engineer') return true;
-    if (path === '/hq' && location.pathname === '/hq') return true;
-    return location.pathname.startsWith(path) && path !== '/customer' && path !== '/engineer' && path !== '/hq';
+    if (path === '/' && location.pathname === '/') return true;
+    return location.pathname.startsWith(path) && path !== '/';
   };
 
   return (
@@ -130,7 +134,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
           <button
-            onClick={async () => { await signOut(); navigate('/'); }}
+            onClick={async () => { await signOut(); }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all"
           >
             <LogOut className="w-4 h-4 shrink-0" />
@@ -142,7 +146,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
       {/* Main Content */}
       <main className={`flex-1 min-h-screen transition-all duration-200 ${collapsed ? 'ml-16' : 'ml-56'}`}>
         <div className="p-6">
-          {children}
+          <Outlet />
         </div>
       </main>
     </div>

@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth, getRoleRedirectPath } from '@/hooks/useAuth';
+import { useAuth, redirectToRoleSubdomain } from '@/hooks/useAuth';
 import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,7 +38,11 @@ export function LoginPage() {
           toast.error(error.message);
         } else {
           toast.success('Signed in successfully');
-          navigate(redirectPath || getRoleRedirectPath(role));
+          if (redirectPath) {
+            navigate(redirectPath);
+          } else if (role && role !== 'public') {
+            redirectToRoleSubdomain(role, null);
+          }
         }
       } else {
         if (!fullName.trim()) {

@@ -4,7 +4,7 @@
 
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, getRoleRedirectPath } from '@/hooks/useAuth';
+import { useAuth, redirectToRoleSubdomain } from '@/hooks/useAuth';
 import { Loader2, Zap } from 'lucide-react';
 
 export function AuthCallbackPage() {
@@ -16,9 +16,9 @@ export function AuthCallbackPage() {
     // isAuthenticated=true and the correct role. We just wait for it.
     if (isLoading) return;
 
-    if (isAuthenticated) {
-      // Auth state is ready — redirect based on role
-      navigate(getRoleRedirectPath(role), { replace: true });
+    if (isAuthenticated && role && role !== 'public') {
+      // Auth state is ready — redirect to role's subdomain
+      redirectToRoleSubdomain(role, null);
     } else {
       // Auth failed
       console.error('[Auth Callback] Not authenticated after callback');
