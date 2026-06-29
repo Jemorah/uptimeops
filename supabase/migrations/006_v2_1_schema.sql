@@ -518,4 +518,14 @@ ON CONFLICT (name) DO UPDATE SET
   severity_rules = EXCLUDED.severity_rules,
   is_active = EXCLUDED.is_active;
 
+-- ── Enable RLS on temporary_links_archive ──
+ALTER TABLE IF EXISTS temporary_links_archive ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY tla_admin ON temporary_links_archive FOR ALL USING (
+    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 COMMIT;

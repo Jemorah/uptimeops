@@ -94,7 +94,7 @@ export function EmergencyPage() {
     if (step !== 'active') return;
     const agentSteps = [
       { name: 'TRIAGE', delay: 2000, log: '[TRIAGE] Classifying issue... Detected: WordPress plugin conflict' },
-      { name: 'ISOLATE', delay: 5000, log: '[ISOLATE] VM sandbox-7f3a9e2d spawned. Site cloned successfully.' },
+      { name: 'ISOLATE', delay: 5000, log: '[ISOLATE] Isolated VM spawned. Site cloned successfully.' },
       { name: 'REPAIR', delay: 12000, log: '[REPAIR] Patching class-checkout.php line 142... Fix applied.' },
       { name: 'VALIDATE', delay: 18000, log: '[VALIDATE] Smoke tests: 8/8 passed. Confidence: 94%.' },
       { name: 'DEPLOY', delay: 22000, log: '[DEPLOY] Coordinator approved. Deploying to production...' },

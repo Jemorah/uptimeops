@@ -13,15 +13,17 @@ interface TerminalLine {
   timestamp: string;
 }
 
-const WELCOME_MESSAGE = `
+function getWelcomeMessage(websiteUrl: string) {
+  return `
 ╔══════════════════════════════════════════════════════════════╗
-║  UptimeOps Secure VM Gateway v3.2.1                          ║
-║  Isolated session: sandbox-7f3a9e2d                          ║
+║  UptimeOps Secure VM Gateway                                 ║
+║  Target: ${websiteUrl.padEnd(53, ' ')}                     ║
 ║  Network: isolated (no egress)                               ║
 ║  Encryption: ChaCha20-Poly1305                               ║
 ╚══════════════════════════════════════════════════════════════╝
 
 $ `;
+}
 
 const COMMANDS: Record<string, { output: string; type: 'output' | 'error' }> = {
   help: {
@@ -39,7 +41,7 @@ const COMMANDS: Record<string, { output: string; type: 'output' | 'error' }> = {
     type: 'output',
   },
   status: {
-    output: `System Status — acme-corp.com (sandbox-7f3a9e2d)
+    output: `System Status — {{WEBSITE}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OS:         Ubuntu 22.04 LTS
 Kernel:     5.15.0-105-generic
@@ -70,7 +72,7 @@ drwxr-xr-x  8 root root 4096 Jun 25 14:00 app
   },
   'cat package.json': {
     output: `{
-  "name": "acme-corp-api",
+  "name": "target-site",
   "version": "2.4.1",
   "scripts": {
     "start": "node dist/server.js",
@@ -145,12 +147,12 @@ interface VmTerminalProps {
   websiteUrl: string;
 }
 
-export function VmTerminal({ websiteUrl }: VmTerminalProps) {
+export function VmTerminal({ incidentId, websiteUrl }: VmTerminalProps) {
   const [lines, setLines] = useState<TerminalLine[]>([
     {
       id: 'welcome',
       type: 'system',
-      content: WELCOME_MESSAGE,
+      content: getWelcomeMessage(websiteUrl),
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -186,7 +188,7 @@ export function VmTerminal({ websiteUrl }: VmTerminalProps) {
         setLines([{
           id: `clear-${Date.now()}`,
           type: 'system',
-          content: WELCOME_MESSAGE,
+          content: getWelcomeMessage(websiteUrl),
           timestamp: new Date().toISOString(),
         }]);
         return;
@@ -208,7 +210,7 @@ export function VmTerminal({ websiteUrl }: VmTerminalProps) {
         setLines(prev => [...prev, {
           id: `recon-${Date.now()}`,
           type: 'system',
-          content: '\n[SYSTEM] Reconnected to sandbox-7f3a9e2d\n$ ',
+          content: `\n[SYSTEM] Reconnected to ${websiteUrl}\n$ `,
           timestamp: new Date().toISOString(),
         }]);
         return;
@@ -218,7 +220,7 @@ export function VmTerminal({ websiteUrl }: VmTerminalProps) {
         setLines(prev => [...prev, {
           id: `out-${Date.now()}`,
           type: matched[1].type,
-          content: matched[1].output,
+          content: matched[1].output.replace(/\{\{WEBSITE\}\}/g, websiteUrl),
           timestamp: new Date().toISOString(),
         }]);
       } else if (cmd) {
@@ -251,7 +253,7 @@ export function VmTerminal({ websiteUrl }: VmTerminalProps) {
         <div className="flex items-center gap-2">
           <Terminal className="w-4 h-4 text-lime" />
           <span className="text-xs font-bold font-mono">VM: {websiteUrl}</span>
-          <span className="text-[10px] text-white/30 font-mono">sandbox-7f3a9e2d</span>
+          <span className="text-[10px] text-white/30 font-mono">{incidentId.slice(0, 8)}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-lime animate-pulse' : 'bg-red-400'}`} />
@@ -261,7 +263,7 @@ export function VmTerminal({ websiteUrl }: VmTerminalProps) {
           </button>
           <button
             onClick={() => {
-              setLines([{ id: 'clear', type: 'system', content: WELCOME_MESSAGE, timestamp: new Date().toISOString() }]);
+              setLines([{ id: 'clear', type: 'system', content: getWelcomeMessage(websiteUrl), timestamp: new Date().toISOString() }]);
               setIsConnected(true);
             }}
             className="p-1 text-white/30 hover:text-red-400 transition-colors"

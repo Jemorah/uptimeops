@@ -15,21 +15,13 @@ interface CoordinatorGateProps {
   onReject: (reason: string) => void;
 }
 
-const VALIDATION_TESTS = [
-  { name: 'HTTP Status Code', result: 'pass', detail: '200 OK — 142ms' },
-  { name: 'Checkout Flow', result: 'pass', detail: 'End-to-end success — 891ms' },
-  { name: 'Payment Gateway', result: 'pass', detail: 'Stripe integration — 523ms' },
-  { name: 'Mobile Rendering', result: 'pass', detail: 'No layout shifts detected' },
-  { name: 'Cross-browser', result: 'pass', detail: 'Chrome, Firefox, Safari OK' },
-  { name: 'DB Integrity', result: 'pass', detail: 'No corruption, indexes intact' },
-  { name: 'Plugin Compat', result: 'pass', detail: '12/12 plugins functioning' },
-  { name: 'Performance', result: 'pass', detail: 'TTFB: 312ms (63% improvement)' },
-];
+// Validation tests will come from smoke_tests table in production
 
-export function CoordinatorGate({ onApprove, onReject }: CoordinatorGateProps) {
+export function CoordinatorGate({ lifecycle, onApprove, onReject }: CoordinatorGateProps) {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
-  const confidence = 94;
+  const totalTests = (lifecycle.auditReport?.testsPassed || 0) + (lifecycle.auditReport?.testsFailed || 0);
+  const confidence = totalTests > 0 ? Math.round((lifecycle.auditReport!.testsPassed / totalTests) * 100) : 0;
 
   return (
     <div className="bg-surface border border-white/5">
@@ -55,22 +47,32 @@ export function CoordinatorGate({ onApprove, onReject }: CoordinatorGateProps) {
         <div className="flex items-center gap-2 mb-3">
           <FileText className="w-4 h-4 text-cyan" />
           <span className="text-xs font-bold uppercase tracking-wider">Validation Report</span>
-          <span className="text-[10px] text-white/30">8/8 passed</span>
+          <span className="text-[10px] text-white/30">Tests from smoke_tests table</span>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {VALIDATION_TESTS.map((test) => (
-            <div
-              key={test.name}
-              className="flex items-center gap-2 p-2 bg-black/20 border border-white/5"
-            >
-              <CheckCircle className="w-3 h-3 text-green-400 flex-shrink-0" />
-              <div className="min-w-0">
-                <div className="text-xs text-white/60">{test.name}</div>
-                <div className="text-[10px] text-white/30 font-mono">{test.detail}</div>
+        {totalTests > 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            {Array.from({ length: lifecycle.auditReport!.testsPassed }).map((_, i) => (
+              <div key={`pass-${i}`} className="flex items-center gap-2 p-2 bg-black/20 border border-white/5">
+                <CheckCircle className="w-3 h-3 text-green-400 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs text-white/60">Test {i + 1}</div>
+                  <div className="text-[10px] text-white/30 font-mono">Passed</div>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            {Array.from({ length: lifecycle.auditReport!.testsFailed }).map((_, i) => (
+              <div key={`fail-${i}`} className="flex items-center gap-2 p-2 bg-black/20 border border-red-500/10">
+                <XCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs text-white/60">Test {lifecycle.auditReport!.testsPassed + i + 1}</div>
+                  <div className="text-[10px] text-red-400/60 font-mono">Failed</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-4 text-[10px] text-white/20">No test results available yet. Run validation to populate.</div>
+        )}
       </div>
 
       {/* AI Logs Summary */}
@@ -80,11 +82,11 @@ export function CoordinatorGate({ onApprove, onReject }: CoordinatorGateProps) {
           <span className="text-xs font-bold uppercase tracking-wider">Pipeline Summary</span>
         </div>
         <div className="text-xs text-white/50 space-y-1">
-          <p><span className="text-white/30">Root cause:</span> WooCommerce 8.2.0 broke custom-gateway-plugin v1.4.2</p>
-          <p><span className="text-white/30">Fix:</span> Patched class-checkout.php line 142</p>
-          <p><span className="text-white/30">Files modified:</span> 1 file, 1 line changed</p>
-          <p><span className="text-white/30">VM session:</span> sandbox-7f3a9e2d (isolated)</p>
-          <p><span className="text-white/30">Cost:</span> $3.42 total pipeline cost</p>
+          <p><span className="text-white/30">Root cause:</span> {lifecycle.auditReport?.rootCause || 'Analysis pending...'}</p>
+          <p><span className="text-white/30">Fix:</span> {lifecycle.auditReport?.fixDescription || 'Not yet available'}</p>
+          <p><span className="text-white/30">Files modified:</span> {lifecycle.auditReport?.filesModified ?? '-'} file(s)</p>
+          <p><span className="text-white/30">Pipeline status:</span> {lifecycle.currentStage}</p>
+          <p><span className="text-white/30">Confidence:</span> {confidence}%</p>
         </div>
       </div>
 

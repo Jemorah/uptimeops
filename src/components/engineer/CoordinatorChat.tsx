@@ -10,57 +10,15 @@ import {
 } from 'lucide-react';
 import type { ChatMessage } from '@/components/escalation/types';
 
-const INITIAL_MESSAGES: ChatMessage[] = [
-  {
-    id: 'cm-1',
-    sender: 'System',
-    senderRole: 'system',
-    content: 'Coordinator Sarah has been notified of your workspace session.',
-    timestamp: '2024-06-25T14:45:00Z',
-  },
-  {
-    id: 'cm-2',
-    sender: 'Sarah (Coordinator)',
-    senderRole: 'coordinator',
-    content: 'Hey Alex, I see you picked up the DB pool escalation. How\'s it looking?',
-    timestamp: '2024-06-25T14:46:00Z',
-  },
-  {
-    id: 'cm-3',
-    sender: 'Alex Chen',
-    senderRole: 'engineer',
-    content: 'Not great. AI tried increasing pool max and adding idle timeout, but the root issue is a connection leak in the products API endpoint.',
-    timestamp: '2024-06-25T14:47:00Z',
-  },
-  {
-    id: 'cm-4',
-    sender: 'Sarah (Coordinator)',
-    senderRole: 'coordinator',
-    content: 'Good catch. Is it the error path missing pool.release()? I remember we had a similar issue in ESC-2011.',
-    timestamp: '2024-06-25T14:48:00Z',
-  },
-  {
-    id: 'cm-5',
-    sender: 'Alex Chen',
-    senderRole: 'engineer',
-    content: 'Exactly that. The catch block logs the error but never releases the connection back to the pool. I\'m preparing the fix now.',
-    timestamp: '2024-06-25T14:49:00Z',
-  },
-  {
-    id: 'cm-6',
-    sender: 'Sarah (Coordinator)',
-    senderRole: 'coordinator',
-    content: 'Perfect. Once you submit, I\'ll review for deployment. Customer is Enterprise so we need to be extra careful. Please include a note about the fix in the handoff.',
-    timestamp: '2024-06-25T14:50:00Z',
-  },
-];
+// Chat starts empty — messages are added by the engineer in real time.
+// Future: Load historical messages from Supabase realtime.
 
 interface CoordinatorChatProps {
   incidentId: string;
 }
 
 export function CoordinatorChat({ incidentId }: CoordinatorChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +33,7 @@ export function CoordinatorChat({ incidentId }: CoordinatorChatProps) {
 
     const newMessage: ChatMessage = {
       id: `cm-${Date.now()}`,
-      sender: 'Alex Chen',
+      sender: 'Engineer',
       senderRole: 'engineer',
       content: input.trim(),
       timestamp: new Date().toISOString(),
