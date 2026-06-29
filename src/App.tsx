@@ -1,74 +1,114 @@
 // ═══════════════════════════════════════════════════════════════
-// UptimeOps v2.1 — Multi-Subdomain App Router
-// ONE build, ONE deployment. Runtime hostname detection.
-// Admin (cumouat@gmail.com) can access all subdomains.
+// APP — Single Routes, all routes use full paths
+// / = landing, /login = login, /hq/* = HQ portal, /customer/* = customer, etc.
+// No portal switching — React Router handles everything.
 // ═══════════════════════════════════════════════════════════════
 
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from '@/hooks/useAuth';
-import { getCurrentPortal } from '@/lib/supabase/client';
-import { MarketingRouter } from '@/routers/MarketingRouter';
-import { CustomerRouter } from '@/routers/CustomerRouter';
-import { HQRouter } from '@/routers/HQRouter';
-import { EngineerRouter } from '@/routers/EngineerRouter';
-import { Loader2, Zap } from 'lucide-react';
+import { lazy, Suspense } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { LoadingScreen } from '@/components/LoadingScreen';
+import { PortalLayout } from '@/layouts/PortalLayout';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
-function PortalGate({ portal, children }: { portal: string; children: React.ReactNode }) {
-  const navigate = useNavigate();
-  const { isAuthenticated, isLoading, role } = useAuth();
+// ── Public pages ──
+const LandingPage      = lazy(() => import('@/pages/public/LandingPage').then(m => ({ default: m.LandingPage })));
+const LoginPage        = lazy(() => import('@/pages/public/LoginPage').then(m => ({ default: m.LoginPage })));
+const SignupPage       = lazy(() => import('@/pages/public/SignupPage').then(m => ({ default: m.SignupPage })));
+const ForgotPassword   = lazy(() => import('@/pages/public/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
+const ResetPassword    = lazy(() => import('@/pages/public/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const AuthCallback     = lazy(() => import('@/pages/public/AuthCallbackPage').then(m => ({ default: m.AuthCallbackPage })));
+const PricingPage      = lazy(() => import('@/pages/public/PricingPage').then(m => ({ default: m.PricingPage })));
+const EmergencyPage    = lazy(() => import('@/pages/public/EmergencyPage').then(m => ({ default: m.EmergencyPage })));
+const StatusPage       = lazy(() => import('@/pages/public/StatusPage').then(m => ({ default: m.StatusPage })));
+const EngineerOnboard  = lazy(() => import('@/pages/engineer/EngineerOnboarding').then(m => ({ default: m.EngineerOnboarding })));
 
-  useEffect(() => {
-    if (portal === 'www') return;
-    if (isLoading) return;
-    // Admin can access all portals — no redirect needed
-    if (role === 'admin') return;
-    if (!isAuthenticated) {
-      console.log('[PortalGate] Not authenticated on portal:', portal, '→ redirecting to /login');
-      const currentPath = window.location.hash.replace(/^#/, '');
-      navigate('/login?redirect_to=' + encodeURIComponent(currentPath), { replace: true });
-    }
-  }, [portal, isAuthenticated, isLoading, role, navigate]);
+// ── HQ pages ──
+const HQDashboard      = lazy(() => import('@/pages/hq/HQDashboard').then(m => ({ default: m.HQDashboard })));
+const HQIncidents      = lazy(() => import('@/pages/hq/HQIncidents').then(m => ({ default: m.HQIncidents })));
+const HQApprovals      = lazy(() => import('@/pages/hq/HQApprovals').then(m => ({ default: m.HQApprovals })));
+const HQEngineers      = lazy(() => import('@/pages/hq/HQEngineers').then(m => ({ default: m.HQEngineers })));
+const HQAudit          = lazy(() => import('@/pages/hq/HQAudit').then(m => ({ default: m.HQAudit })));
+const HQCommunications = lazy(() => import('@/pages/hq/HQCommunications').then(m => ({ default: m.HQCommunications })));
+const GapSealAudit     = lazy(() => import('@/pages/hq/GapSealAudit').then(m => ({ default: m.GapSealAudit })));
+const HQScanners       = lazy(() => import('@/pages/hq/HQScanners').then(m => ({ default: m.HQScanners })));
+const HQGuidelines     = lazy(() => import('@/pages/hq/HQGuidelines').then(m => ({ default: m.HQGuidelines })));
+const HQSettings       = lazy(() => import('@/pages/hq/HQSettings').then(m => ({ default: m.HQSettings })));
 
-  if (portal !== 'www' && isLoading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="flex items-center gap-2 justify-center">
-            <Zap className="w-5 h-5 text-[#a3e635] animate-pulse" />
-            <span className="text-sm font-black tracking-tight text-white/60">UPTIME<span className="text-[#a3e635]">OPS</span></span>
-          </div>
-          <Loader2 className="w-6 h-6 text-[#a3e635] animate-spin mx-auto" />
-          <p className="text-xs text-white/40 font-mono uppercase tracking-wider">Verifying session...</p>
-        </div>
-      </div>
-    );
-  }
+// ── Customer pages ──
+const CustomerDashboard = lazy(() => import('@/pages/customer/CustomerDashboard').then(m => ({ default: m.CustomerDashboard })));
+const CustomerIncidents = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
+const CustomerBilling   = lazy(() => import('@/pages/customer/CustomerBilling').then(m => ({ default: m.CustomerBilling })));
+const CustomerVault     = lazy(() => import('@/pages/customer/CustomerVault').then(m => ({ default: m.CustomerVault })));
+const CustomerComms     = lazy(() => import('@/pages/customer/CustomerComms').then(m => ({ default: m.CustomerComms })));
+const CustomerSecurity  = lazy(() => import('@/pages/customer/CustomerSecurity').then(m => ({ default: m.CustomerSecurity })));
+const CustomerSettings  = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
 
-  return <>{children}</>;
-}
-
-function AppInner() {
-  const rawPortal = getCurrentPortal();
-  // Safety: only allow known portal values
-  const portal = ['app', 'dashboard', 'engineers', 'www'].includes(rawPortal)
-    ? rawPortal as 'www' | 'app' | 'dashboard' | 'engineers'
-    : 'www';
-  console.log('[App] Current portal:', portal, 'hash:', window.location.hash);
-  return (
-    <PortalGate portal={portal}>
-      {portal === 'app' && <CustomerRouter />}
-      {portal === 'dashboard' && <HQRouter />}
-      {portal === 'engineers' && <EngineerRouter />}
-      {portal === 'www' && <MarketingRouter />}
-    </PortalGate>
-  );
-}
+// ── Engineer pages ──
+const EngineerDashboard = lazy(() => import('@/pages/engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
+const EngineerSessions  = lazy(() => import('@/pages/engineer/EngineerSessions').then(m => ({ default: m.EngineerSessions })));
+const EngineerWorkspace = lazy(() => import('@/pages/engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
+const IncidentWorkspace = lazy(() => import('@/pages/engineer/IncidentWorkspace').then(m => ({ default: m.IncidentWorkspace })));
+const EngineerAudit     = lazy(() => import('@/pages/engineer/EngineerAudit').then(m => ({ default: m.EngineerAudit })));
+const EngineerOnCall    = lazy(() => import('@/pages/engineer/EngineerOnCall').then(m => ({ default: m.EngineerOnCall })));
+const EngineerSecurity  = lazy(() => import('@/pages/engineer/EngineerSecurity').then(m => ({ default: m.EngineerSecurity })));
+const EngineerSettings  = lazy(() => import('@/pages/engineer/EngineerSettings').then(m => ({ default: m.EngineerSettings })));
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        {/* ═══ PUBLIC ═══ */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/emergency" element={<EmergencyPage />} />
+        <Route path="/status" element={<StatusPage />} />
+        <Route path="/engineer/onboard" element={<EngineerOnboard />} />
+
+        {/* ═══ HQ PORTAL (/hq/*) ═══ */}
+        <Route element={<PortalLayout portalType="admin" />}>
+          <Route path="/hq" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQDashboard /></ProtectedRoute>} />
+          <Route path="/hq/incidents" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQIncidents /></ProtectedRoute>} />
+          <Route path="/hq/approvals" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQApprovals /></ProtectedRoute>} />
+          <Route path="/hq/engineers" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQEngineers /></ProtectedRoute>} />
+          <Route path="/hq/audit" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQAudit /></ProtectedRoute>} />
+          <Route path="/hq/communications" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQCommunications /></ProtectedRoute>} />
+          <Route path="/hq/gap-seal" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><GapSealAudit /></ProtectedRoute>} />
+          <Route path="/hq/scanners" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQScanners /></ProtectedRoute>} />
+          <Route path="/hq/guidelines" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQGuidelines /></ProtectedRoute>} />
+          <Route path="/hq/settings" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQSettings /></ProtectedRoute>} />
+        </Route>
+
+        {/* ═══ CUSTOMER PORTAL (/customer/*) ═══ */}
+        <Route element={<PortalLayout portalType="customer" />}>
+          <Route path="/customer" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerDashboard /></ProtectedRoute>} />
+          <Route path="/customer/incidents" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerIncidents /></ProtectedRoute>} />
+          <Route path="/customer/billing" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerBilling /></ProtectedRoute>} />
+          <Route path="/customer/vault" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerVault /></ProtectedRoute>} />
+          <Route path="/customer/comms" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerComms /></ProtectedRoute>} />
+          <Route path="/customer/security" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerSecurity /></ProtectedRoute>} />
+          <Route path="/customer/settings" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerSettings /></ProtectedRoute>} />
+        </Route>
+
+        {/* ═══ ENGINEER PORTAL (/engineer/*) ═══ */}
+        <Route element={<PortalLayout portalType="engineer" />}>
+          <Route path="/engineer" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerDashboard /></ProtectedRoute>} />
+          <Route path="/engineer/sessions" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerSessions /></ProtectedRoute>} />
+          <Route path="/engineer/workspace/:incidentId" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerWorkspace /></ProtectedRoute>} />
+          <Route path="/engineer/incident/:incidentId" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><IncidentWorkspace /></ProtectedRoute>} />
+          <Route path="/engineer/audit" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerAudit /></ProtectedRoute>} />
+          <Route path="/engineer/oncall" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerOnCall /></ProtectedRoute>} />
+          <Route path="/engineer/security" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerSecurity /></ProtectedRoute>} />
+          <Route path="/engineer/settings" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerSettings /></ProtectedRoute>} />
+        </Route>
+
+        {/* ═══ CATCH-ALL ═══ */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

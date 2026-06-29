@@ -8,6 +8,7 @@ import { HashRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from '@/components/ui/sonner';
+import { AuthProvider } from '@/hooks/useAuth';
 import { queryClient } from '@/lib/query-client';
 import { initSentry } from '@/lib/sentry';
 import App from './App.tsx';
@@ -22,11 +23,13 @@ if (!rootEl) {
 } else {
   createRoot(rootEl).render(
     <HashRouter>
-      <QueryClientProvider client={queryClient}>
-        <App />
-        <Toaster />
-        {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
-      </QueryClientProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+          <Toaster />
+          {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+        </QueryClientProvider>
+      </AuthProvider>
     </HashRouter>
   );
 }
