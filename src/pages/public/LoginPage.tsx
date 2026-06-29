@@ -1,30 +1,30 @@
 // ═══════════════════════════════════════════════════════════════
-// LOGIN PAGE — Global Entry Point
-// After successful login, useAuth redirects to the correct portal.
-// Has a 10-second timeout so the UI never hangs forever.
+// LOGIN PAGE — Watches isAuthenticated and navigates via React Router.
+// NO page reloads. Auth state flows through onAuthStateChange → navigate().
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 
-const LOGIN_TIMEOUT_MS = 10000; // 10 seconds max
+const LOGIN_TIMEOUT_MS = 10000;
 
-// Promise wrapper with timeout
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      setTimeout(() => reject(new Error(`${label} timed out`)), ms)
     ),
   ]);
 }
 
 export function LoginPage() {
-  const { signIn, signUp, signInWithOAuth } = useAuth();
+  const navigate = useNavigate();
+  const { signIn, signUp, signInWithOAuth, isAuthenticated, role } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -33,30 +33,30 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showAdminSetup, setShowAdminSetup] = useState(false);
-  const abortRef = useRef(false);
 
-  // ── Email/Password Login ──
+  // ── KEY FIX: Watch isAuthenticated. When it becomes true, navigate. ──
+  useEffect(() => {
+    if (isAuthenticated && role && role !== 'public') {
+      console.log('[LoginPage] isAuthenticated=true, role=' + role + ', navigating...');
+      const dest = role === 'admin' || role === 'coordinator' ? '/hq'
+        : role === 'engineer' ? '/engineer'
+        : '/customer';
+      navigate(dest, { replace: true });
+    }
+  }, [isAuthenticated, role, navigate]);
+
+  // ── Email/Password ──
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setShowAdminSetup(false);
     setLoading(true);
-    abortRef.current = false;
 
     try {
       if (mode === 'signin') {
-        console.log('[LoginPage] Calling signIn for:', email);
-
-        const result = await withTimeout(
-          signIn(email, password),
-          LOGIN_TIMEOUT_MS,
-          'Sign in'
-        );
-
-        if (abortRef.current) return;
+        const result = await withTimeout(signIn(email, password), LOGIN_TIMEOUT_MS, 'Sign in');
 
         if (result.error) {
-          console.log('[LoginPage] signIn error:', result.error.message);
           if (email.toLowerCase() === 'cumouat@gmail.com' && result.error.message?.includes('Invalid')) {
             setError('Admin account not found. Click below to create it.');
             setShowAdminSetup(true);
@@ -64,31 +64,26 @@ export function LoginPage() {
             setError(result.error.message);
             toast.error(result.error.message);
           }
+          setLoading(false);
           return;
         }
 
-        if (result.role) {
-          console.log('[LoginPage] Sign in success, role:', result.role);
-          toast.success(`Signed in — ${result.role} access`);
-          // Redirect is handled by useAuth.doPostLoginRedirect()
-        }
+        // SUCCESS: onAuthStateChange will update isAuthenticated → useEffect above will navigate
+        console.log('[LoginPage] signIn returned success, waiting for onAuthStateChange...');
+        // Don't setLoading(false) here — keep button disabled while we navigate
         return;
       }
 
-      // Sign up mode
+      // Sign up
       if (mode === 'signup') {
         if (!fullName.trim()) {
           setError('Full name is required');
+          setLoading(false);
           return;
         }
 
-        const result = await withTimeout(
-          signUp(email, password, { full_name: fullName }),
-          LOGIN_TIMEOUT_MS,
-          'Sign up'
-        );
-
-        if (abortRef.current) return;
+        const result = await withTimeout(signUp(email, password, { full_name: fullName }), LOGIN_TIMEOUT_MS, 'Sign up');
+        setLoading(false);
 
         if (result.error) {
           setError(result.error.message);
@@ -97,8 +92,8 @@ export function LoginPage() {
         }
 
         if (result.role) {
+          // Account created + signed in — onAuthStateChange → navigate
           toast.success(`Account created — ${result.role} access`);
-          // Redirect handled by useAuth
           return;
         }
 
@@ -106,11 +101,9 @@ export function LoginPage() {
         setMode('signin');
       }
     } catch (err: any) {
-      console.error('[LoginPage] Timeout or error:', err?.message);
-      setError(err?.message || 'Request timed out. Please check your connection and try again.');
-      toast.error('Request timed out. Please try again.');
-    } finally {
       setLoading(false);
+      setError(err?.message || 'Request timed out. Try again.');
+      toast.error('Request timed out');
     }
   }
 
@@ -121,40 +114,19 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const suResult = await withTimeout(
-        signUp(email, password, { full_name: 'Admin' }),
-        LOGIN_TIMEOUT_MS,
-        'Admin signup'
-      );
-
-      if (suResult.error && !suResult.error.message?.includes('already')) {
+      const su = await withTimeout(signUp(email, password, { full_name: 'Admin' }), LOGIN_TIMEOUT_MS, 'Admin signup');
+      if (su.error && !su.error.message?.includes('already')) {
         setLoading(false);
-        setError('Failed to create admin: ' + suResult.error.message);
-        toast.error(suResult.error.message);
+        setError('Failed: ' + su.error.message);
         return;
       }
-
-      const siResult = await withTimeout(
-        signIn(email, password),
-        LOGIN_TIMEOUT_MS,
-        'Admin signin'
-      );
-
+      const si = await withTimeout(signIn(email, password), LOGIN_TIMEOUT_MS, 'Admin signin');
       setLoading(false);
-
-      if (siResult.error) {
-        setError(siResult.error.message);
-        toast.error(siResult.error.message);
-        return;
-      }
-
-      if (siResult.role) {
-        toast.success(`Admin account created — ${siResult.role} access granted`);
-      }
+      if (si.error) { setError(si.error.message); return; }
+      toast.success('Admin created');
     } catch (err: any) {
       setLoading(false);
-      setError(err?.message || 'Request timed out');
-      toast.error('Request timed out. Please try again.');
+      setError(err?.message || 'Timed out');
     }
   }
 
@@ -163,24 +135,11 @@ export function LoginPage() {
     setError('');
     setShowAdminSetup(false);
     setLoading(true);
-
-    try {
-      const result = await withTimeout(
-        signInWithOAuth(provider),
-        LOGIN_TIMEOUT_MS,
-        'OAuth'
-      );
-
-      if (result.error) {
-        setLoading(false);
-        setError(result.error.message);
-        toast.error(result.error.message);
-      }
-      // If no error, browser redirects to OAuth provider
-    } catch (err: any) {
+    const result = await withTimeout(signInWithOAuth(provider), LOGIN_TIMEOUT_MS, 'OAuth');
+    if (result.error) {
       setLoading(false);
-      setError(err?.message || 'OAuth request timed out');
-      toast.error('OAuth request timed out');
+      setError(result.error.message);
+      toast.error(result.error.message);
     }
   }
 
@@ -222,21 +181,12 @@ export function LoginPage() {
 
         {/* OAuth */}
         <div className="space-y-3">
-          <Button
-            variant="outline"
-            className="w-full h-10 border-white/10 hover:bg-white/5 text-white"
-            onClick={() => handleOAuth('github')}
-            disabled={loading}
-          >
-            <Github className="w-4 h-4 mr-2" />
-            Continue with GitHub
+          <Button variant="outline" className="w-full h-10 border-white/10 hover:bg-white/5 text-white"
+            onClick={() => handleOAuth('github')} disabled={loading}>
+            <Github className="w-4 h-4 mr-2" /> Continue with GitHub
           </Button>
-          <Button
-            variant="outline"
-            className="w-full h-10 border-white/10 hover:bg-white/5 text-white"
-            onClick={() => handleOAuth('google')}
-            disabled={loading}
-          >
+          <Button variant="outline" className="w-full h-10 border-white/10 hover:bg-white/5 text-white"
+            onClick={() => handleOAuth('google')} disabled={loading}>
             <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
               <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -259,44 +209,27 @@ export function LoginPage() {
           {mode === 'signup' && (
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <Input
-                type="text"
-                placeholder="Full Name"
-                value={fullName}
+              <Input type="text" placeholder="Full Name" value={fullName}
                 onChange={e => setFullName(e.target.value)}
-                className="pl-10 h-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
-              />
+                className="pl-10 h-10 bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             </div>
           )}
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-            <Input
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              className="pl-10 h-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
-            />
+            <Input type="email" placeholder="Email address" value={email}
+              onChange={e => setEmail(e.target.value)} required
+              className="pl-10 h-10 bg-white/5 border-white/10 text-white placeholder:text-white/30" />
           </div>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              minLength={6}
-              className="pl-10 h-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
-            />
+            <Input type="password" placeholder="Password" value={password}
+              onChange={e => setPassword(e.target.value)} required minLength={6}
+              className="pl-10 h-10 bg-white/5 border-white/10 text-white placeholder:text-white/30" />
           </div>
 
-          <Button
-            type="submit"
+          <Button type="submit"
             className="w-full h-10 bg-[#a3e635] text-black hover:bg-[#a3e635]/90 font-bold"
-            disabled={loading}
-          >
+            disabled={loading}>
             {loading ? 'Please wait...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
           </Button>
         </form>
@@ -311,13 +244,7 @@ export function LoginPage() {
         </p>
 
         {/* Back */}
-        <button
-          onClick={() => {
-            window.location.hash = '#/';
-            window.location.reload();
-          }}
-          className="flex items-center gap-1 mx-auto text-xs text-white/30 hover:text-white/60 transition-colors"
-        >
+        <button onClick={() => navigate('/')} className="flex items-center gap-1 mx-auto text-xs text-white/30 hover:text-white/60 transition-colors">
           <ArrowLeft className="w-3 h-3" /> Back to home
         </button>
       </div>

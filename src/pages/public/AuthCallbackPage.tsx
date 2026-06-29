@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CALLBACK — Handles OAuth redirect (Google/GitHub)
-// Exchanges PKCE code for session, then redirects to correct portal.
-// Supports both cross-subdomain (.uptimeops.org) and single-domain (Vercel).
+// Exchanges PKCE code for session. Watches isAuthenticated to navigate.
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, isAdminEmail, isSubdomainMode, getSubdomainForRole, getPortalPathForRole } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase/client';
 import { Loader2, Zap } from 'lucide-react';
 
 const POLL_MS = 400;
@@ -14,136 +14,99 @@ const TIMEOUT_MS = 8000;
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
-  const [phase, setPhase] = useState<'processing' | 'found' | 'timeout'>('processing');
+  const { isAuthenticated, role } = useAuth();
+  const [phase, setPhase] = useState<'processing' | 'timeout'>('processing');
   const [attempts, setAttempts] = useState(0);
   const doneRef = useRef(false);
 
+  // ── Step 1: Exchange PKCE code for session ──
   useEffect(() => {
     console.log('[AuthCallback] Mounted');
-    console.log('[AuthCallback] Full URL:', window.location.href);
-    console.log('[AuthCallback] Search:', window.location.search);
-    console.log('[AuthCallback] Hash:', window.location.hash);
 
-    // Extract PKCE code from URL (could be in search OR hash)
+    // Extract code from URL
     const params = new URLSearchParams(window.location.search);
     let code = params.get('code');
-
-    // If not in search, check hash (HashRouter puts params after #)
     if (!code && window.location.hash.includes('?')) {
-      const hashSearch = window.location.hash.split('?')[1];
-      if (hashSearch) {
-        const hashParams = new URLSearchParams(hashSearch);
-        code = hashParams.get('code');
+      const qs = window.location.hash.split('?')[1];
+      if (qs) code = new URLSearchParams(qs).get('code');
+    }
+
+    if (!code) {
+      console.log('[AuthCallback] No code in URL');
+      return;
+    }
+
+    async function exchange() {
+      console.log('[AuthCallback] Exchanging code...');
+      try {
+        const { error } = await supabase.auth.exchangeCodeForSession(code!);
+        if (error) console.error('[AuthCallback] Exchange error:', error.message);
+        else console.log('[AuthCallback] Code exchanged successfully');
+      } catch (err: any) {
+        console.error('[AuthCallback] Exchange exception:', err?.message);
       }
     }
 
-    console.log('[AuthCallback] PKCE code found:', !!code);
+    exchange();
+  }, []);
 
-    async function run() {
-      // Step 1: If we have a code, exchange it for a session
-      if (code) {
-        console.log('[AuthCallback] Exchanging code for session...');
-        try {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            console.error('[AuthCallback] exchangeCodeForSession error:', error.message);
-          } else if (data.session) {
-            console.log('[AuthCallback] Session created via code exchange');
-          }
-        } catch (err: any) {
-          console.error('[AuthCallback] exchangeCodeForSession exception:', err?.message);
-        }
-      }
+  // ── Step 2: Poll until session appears (onAuthStateChange fires) ──
+  useEffect(() => {
+    if (doneRef.current) return;
 
-      // Step 2: Poll for session (Supabase may also auto-detect via detectSessionInUrl)
-      const start = Date.now();
+    const start = Date.now();
+    const interval = setInterval(async () => {
+      if (doneRef.current) { clearInterval(interval); return; }
 
-      const check = async (): Promise<boolean> => {
-        const { data } = await supabase.auth.getSession();
-        return !!data.session?.user;
-      };
+      const elapsed = Date.now() - start;
+      setAttempts(Math.floor(elapsed / POLL_MS));
 
-      // Immediate check
-      if (await check()) {
-        handleSessionFound();
+      // Check if we have a session
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        console.log('[AuthCallback] Session found via poll');
+        doneRef.current = true;
+        clearInterval(interval);
+        // onAuthStateChange will update isAuthenticated
+        // Second useEffect below will navigate
         return;
       }
 
-      // Poll
-      const interval = setInterval(async () => {
-        const elapsed = Date.now() - start;
-        setAttempts(Math.floor(elapsed / POLL_MS));
+      if (elapsed >= TIMEOUT_MS) {
+        doneRef.current = true;
+        clearInterval(interval);
+        console.error('[AuthCallback] Timeout');
+        setPhase('timeout');
+        setTimeout(() => navigate('/login?error=timeout', { replace: true }), 1000);
+      }
+    }, POLL_MS);
 
-        if (await check()) {
-          clearInterval(interval);
-          handleSessionFound();
-          return;
-        }
-
-        if (elapsed >= TIMEOUT_MS) {
-          clearInterval(interval);
-          console.error('[AuthCallback] Timeout waiting for session');
-          setPhase('timeout');
-          setTimeout(() => {
-            window.location.hash = '#/login?error=auth_timeout';
-            window.location.reload();
-          }, 500);
-        }
-      }, POLL_MS);
-
-      return () => clearInterval(interval);
-    }
-
-    function handleSessionFound() {
-      if (doneRef.current) return;
-      doneRef.current = true;
-      setPhase('found');
-
-      supabase.auth.getSession().then(({ data }) => {
-        const user = data.session?.user;
-        if (!user) {
-          window.location.hash = '#/login?error=no_user';
-          window.location.reload();
-          return;
-        }
-
-        const role = isAdminEmail(user.email) ? 'admin' : 'customer';
-        console.log('[AuthCallback] User:', user.email, 'Role:', role);
-
-        // Use the same redirect logic as email login
-        if (isSubdomainMode()) {
-          const domain = getSubdomainForRole(role);
-          const dest = `https://${domain}/`;
-          console.log('[AuthCallback] Cross-subdomain redirect to:', dest);
-          window.location.href = dest;
-        } else {
-          const path = getPortalPathForRole(role);
-          console.log('[AuthCallback] Single-domain redirect to:', path);
-          window.location.hash = `#${path}`;
-          window.location.reload();
-        }
-      });
-    }
-
-    run();
+    return () => clearInterval(interval);
   }, [navigate]);
 
-  const msg = phase === 'found' ? 'Redirecting...'
-    : phase === 'timeout' ? 'Session timeout — redirecting to login...'
-    : `Processing authentication... (${attempts})`;
+  // ── Step 3: When isAuthenticated becomes true, navigate ──
+  useEffect(() => {
+    if (isAuthenticated && role && role !== 'public') {
+      console.log('[AuthCallback] isAuthenticated=true, navigating to portal');
+      const dest = role === 'admin' || role === 'coordinator' ? '/hq'
+        : role === 'engineer' ? '/engineer'
+        : '/customer';
+      navigate(dest, { replace: true });
+    }
+  }, [isAuthenticated, role, navigate]);
+
+  const msg = phase === 'timeout' ? 'Session timeout — redirecting...'
+    : `Completing sign-in... (${attempts})`;
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
       <div className="text-center space-y-4">
         <div className="flex items-center gap-2 justify-center">
           <Zap className="w-5 h-5 text-[#a3e635] animate-pulse" />
-          <span className="text-sm font-black tracking-tight text-white/60">
-            UPTIME<span className="text-[#a3e635]">OPS</span>
-          </span>
+          <span className="text-sm font-black tracking-tight text-white/60">UPTIME<span className="text-[#a3e635]">OPS</span></span>
         </div>
         <Loader2 className="w-6 h-6 text-[#a3e635] animate-spin mx-auto" />
-        <p className="text-xs text-white/40 font-mono uppercase tracking-wider">{msg}</p>
-        <p className="text-[10px] text-white/20 font-mono">Open F12 console for debug logs</p>
+        <p className="text-xs text-white/40 font-mono uppercase">{msg}</p>
       </div>
     </div>
   );

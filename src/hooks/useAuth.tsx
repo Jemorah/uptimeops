@@ -1,22 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CONTEXT — UptimeOps
-// Cookie-based cross-subdomain session. Redirects after login.
-// Admin (cumouat@gmail.com) gets admin role on all portals.
+// Session stored in localStorage. No page reloads on login.
+// LoginPage watches isAuthenticated and navigates via React Router.
 // ═══════════════════════════════════════════════════════════════
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { User, AuthError } from '@supabase/supabase-js';
-import {
-  supabase,
-  isSubdomainMode,
-  getSubdomainForRole,
-  getPortalPathForRole,
-  isAdminEmail,
-  SUBDOMAINS,
-} from '@/lib/supabase/client';
+import { supabase, isAdminEmail } from '@/lib/supabase/client';
 import type { UserRole } from '@/lib/supabase/client';
 
-// ── Types ──
 interface AuthState {
   user: User | null;
   role: UserRole;
@@ -47,24 +39,6 @@ const AuthContext = createContext<AuthContextType>({
   sendPasswordReset: async () => ({ error: null }),
 });
 
-// ── Redirect after login based on subdomain vs single-domain mode ──
-function doPostLoginRedirect(role: UserRole) {
-  if (isSubdomainMode()) {
-    // Cross-subdomain: full-page redirect to the correct subdomain
-    const domain = getSubdomainForRole(role);
-    const dest = `https://${domain}/`;
-    console.log('[Auth] Cross-subdomain redirect to:', dest);
-    window.location.href = dest;
-  } else {
-    // Single-domain (Vercel / localhost): hash-based navigation
-    const path = getPortalPathForRole(role);
-    console.log('[Auth] Single-domain redirect to:', path);
-    window.location.hash = `#${path}`;
-    // Force reload so the route picks up the new auth state cleanly
-    window.location.reload();
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -73,12 +47,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
   });
 
-  // ── Initialize: check for existing session ──
+  // ── Initialize: check for existing session on mount ──
   useEffect(() => {
     let mounted = true;
 
     async function init() {
       try {
+        console.log('[Auth] init() — calling getSession()...');
         const { data: { session }, error } = await supabase.auth.getSession();
         if (!mounted) return;
 
@@ -90,10 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (session?.user) {
           const role = resolveRole(session.user);
-          console.log('[Auth] Session restored:', session.user.email, 'role:', role);
+          console.log('[Auth] Session found:', session.user.email, 'role:', role);
           setState({ user: session.user, role, isLoading: false, isAuthenticated: true });
         } else {
-          console.log('[Auth] No session found');
+          console.log('[Auth] No session');
           setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
         }
       } catch (err: any) {
@@ -106,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     init();
 
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       const user = session?.user ?? null;
@@ -117,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
-  // ── Sign In (email/password) ──
+  // ── Sign In — returns result, NO redirect (caller handles navigation) ──
   const signIn = useCallback(async (email: string, password: string) => {
     console.log('[Auth] signIn:', email);
     try {
@@ -131,20 +107,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!data.session?.user) {
-        return { error: { message: 'No session created.', name: 'AuthError', status: 400 } as AuthError };
+        return { error: { message: 'No session.', name: 'AuthError', status: 400 } as AuthError };
       }
 
       const role = resolveRole(data.session.user);
-      console.log('[Auth] Signed in:', data.session.user.email, 'role:', role);
-
-      // State is updated by onAuthStateChange, then we redirect
-      // Small delay to let state settle before redirect
-      setTimeout(() => doPostLoginRedirect(role), 100);
-
+      console.log('[Auth] Sign in success:', data.session.user.email, 'role:', role);
+      // onAuthStateChange will update React state
+      // LoginPage watches isAuthenticated and navigates
       return { error: null, role };
     } catch (err: any) {
       console.error('[Auth] signIn exception:', err?.message);
-      return { error: { message: err?.message || 'Sign in failed.', name: 'AuthError', status: 500 } as AuthError };
+      return { error: { message: err?.message || 'Failed.', name: 'AuthError', status: 500 } as AuthError };
     }
   }, []);
 
@@ -153,78 +126,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[Auth] signUp:', email);
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+        email, password,
         options: { data: metadata, emailRedirectTo: `${window.location.origin}/#/login` },
       });
-
       if (error) return { error };
-
       if (data.session?.user) {
-        const role = resolveRole(data.session.user);
-        setTimeout(() => doPostLoginRedirect(role), 100);
-        return { error: null, role };
+        return { error: null, role: resolveRole(data.session.user) };
       }
-
-      return { error: null }; // Email confirmation required
+      return { error: null };
     } catch (err: any) {
-      console.error('[Auth] signUp exception:', err?.message);
-      return { error: { message: err?.message || 'Sign up failed.', name: 'AuthError', status: 500 } as AuthError };
+      return { error: { message: err?.message || 'Failed.', name: 'AuthError', status: 500 } as AuthError };
     }
   }, []);
 
-  // ── Sign In with OAuth ──
+  // ── OAuth — browser redirects to provider, no return ──
   const signInWithOAuth = useCallback(async (provider: 'google' | 'github') => {
     console.log('[Auth] OAuth:', provider);
-    try {
-      const redirectTo = `${window.location.origin}/#/auth/callback`;
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: { redirectTo },
-      });
-
-      if (error) {
-        const msg = error.message?.includes('provider is not enabled')
-          ? `${provider} login is not enabled in Supabase.`
-          : error.message;
-        return { error: { ...error, message: msg } as AuthError };
-      }
-
-      if (data?.url) {
-        window.location.href = data.url; // Redirect to OAuth provider
-      }
-
-      return { error: null };
-    } catch (err: any) {
-      console.error('[Auth] OAuth exception:', err?.message);
-      return { error: { message: err?.message || 'OAuth failed.', name: 'AuthError', status: 500 } as AuthError };
-    }
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/#/auth/callback` },
+    });
+    if (error) return { error: { ...error, message: error.message || `${provider} failed` } as AuthError };
+    if (data?.url) window.location.href = data.url;
+    return { error: null };
   }, []);
 
   // ── Sign Out ──
   const signOut = useCallback(async () => {
     console.log('[Auth] signOut');
     await supabase.auth.signOut();
-    // On subdomain mode, redirect to www login page
-    // On single-domain, reload to clear state and land on login
-    if (isSubdomainMode()) {
-      window.location.href = `https://${SUBDOMAINS.www}/#/login`;
-    } else {
-      window.location.hash = '#/login';
-      window.location.reload();
-    }
+    setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
   }, []);
 
   // ── Password Reset ──
   const sendPasswordReset = useCallback(async (email: string) => {
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/#/reset-password`,
-      });
-      return { error };
-    } catch (err: any) {
-      return { error: { message: err?.message, name: 'AuthError', status: 500 } as AuthError };
-    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/#/reset-password`,
+    });
+    return { error };
   }, []);
 
   return (

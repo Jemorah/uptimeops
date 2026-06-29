@@ -1,25 +1,44 @@
 // ═══════════════════════════════════════════════════════════════
 // SUPABASE CLIENT — UptimeOps
-// Uses localStorage for session persistence (reliable, no size limit).
-// When subdomains (uptimeops.org) are configured, add cookie mirror.
+// Explicit localStorage config. No custom cookie storage.
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@supabase/supabase-js';
 
-// Read from Supabase-Vercel synced env vars (NEXT_SUPABASE_*) with hardcoded fallback
 const SUPABASE_URL = import.meta.env.NEXT_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.NEXT_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wY29wanNxZ2p2aXJmam5qZW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDkzMjgsImV4cCI6MjA5Nzk4NTMyOH0.5tm3GfGwUVT__BdxVgzXvf7FByxUShKKfdujTkVfXh8';
 
-// ── Supabase client with localStorage (default, reliable) ──
+// Explicitly configure localStorage with the correct key.
+// Supabase default key is: sb-<project-ref>-auth-token
+const localStorageAdapter: Storage = {
+  getItem: (key) => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  },
+  setItem: (key, value) => {
+    try { localStorage.setItem(key, value); } catch (e) { console.error('[Storage] setItem failed:', e); }
+  },
+  removeItem: (key) => {
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+  },
+  key: (index) => {
+    try { return localStorage.key(index); } catch { return null; }
+  },
+  get length() {
+    try { return localStorage.length; } catch { return 0; }
+  },
+  clear: () => {
+    try { localStorage.clear(); } catch { /* ignore */ }
+  },
+};
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    // Use default localStorage — NO custom cookie storage.
-    // The Supabase session (~5KB encoded) exceeds the 4KB browser cookie limit.
-    // localStorage has no size limit and is reliable on Vercel / single-domain.
+    storage: localStorageAdapter,
+    storageKey: 'sb-npcopjsqgjvirfjnjemt-auth-token',
   },
   realtime: {
     params: { eventsPerSecond: 10 },
@@ -63,12 +82,4 @@ export function getPortalPathForRole(role: UserRole): string {
 export const ADMIN_EMAIL = 'cumouat@gmail.com';
 export function isAdminEmail(email: string | undefined | null): boolean {
   return !!email && email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-}
-
-export function subscribeToTable(table: string, callback: (payload: any) => void): () => void {
-  const channel = supabase
-    .channel(`${table}-${Date.now()}`)
-    .on('postgres_changes' as never, { event: '*', schema: 'public', table }, callback)
-    .subscribe();
-  return () => { supabase.removeChannel(channel); };
 }
