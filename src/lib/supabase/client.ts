@@ -6,7 +6,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = import.meta.env.NEXT_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.NEXT_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wY29wanNxZ2p2aXJmam5qZW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDkzMjgsImV4cCI6MjA5Nzk4NTMyOH0.5tm3GfGwUVT__BdxVgzXvf7FByxUShKKfdujTkVfXh8';
+const SUPABASE_ANON_KEY = import.meta.env.NEXT_SUPABASE_ANON_KEY || 'sb_publishable_paEHPh1k230D6ud1VMcTgQ_dMOT-9pL';
 
 // Explicitly configure localStorage with the correct key.
 // Supabase default key is: sb-<project-ref>-auth-token
