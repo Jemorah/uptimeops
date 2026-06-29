@@ -11,11 +11,15 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/hooks/useAuth';
 import { queryClient } from '@/lib/query-client';
 import { initSentry } from '@/lib/sentry';
+import { inject } from '@vercel/analytics';
 import App from './App.tsx';
 import './index.css';
 
 // Initialize Sentry (production only)
 try { initSentry(); } catch (e) { /* sentry optional */ }
+
+// Initialize Vercel Analytics
+inject();
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {
