@@ -1,11 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CALLBACK — Handles OAuth redirect (Google/GitHub)
-// Extracts PKCE code from URL, exchanges for session, redirects by role.
+// Exchanges PKCE code for session, then redirects to correct portal.
+// Supports both cross-subdomain (.uptimeops.org) and single-domain (Vercel).
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, isAdminEmail } from '@/lib/supabase/client';
+import { supabase, isAdminEmail, isSubdomainMode, getSubdomainForRole, getPortalPathForRole } from '@/lib/supabase/client';
 import { Loader2, Zap } from 'lucide-react';
 
 const POLL_MS = 400;
@@ -83,7 +84,10 @@ export function AuthCallbackPage() {
           clearInterval(interval);
           console.error('[AuthCallback] Timeout waiting for session');
           setPhase('timeout');
-          setTimeout(() => navigate('/login?error=auth_timeout', { replace: true }), 500);
+          setTimeout(() => {
+            window.location.hash = '#/login?error=auth_timeout';
+            window.location.reload();
+          }, 500);
         }
       }, POLL_MS);
 
@@ -95,23 +99,29 @@ export function AuthCallbackPage() {
       doneRef.current = true;
       setPhase('found');
 
-      // Get user and determine role
       supabase.auth.getSession().then(({ data }) => {
         const user = data.session?.user;
         if (!user) {
-          navigate('/login?error=no_user', { replace: true });
+          window.location.hash = '#/login?error=no_user';
+          window.location.reload();
           return;
         }
 
-        const role: string = isAdminEmail(user.email) ? 'admin' : 'customer';
+        const role = isAdminEmail(user.email) ? 'admin' : 'customer';
         console.log('[AuthCallback] User:', user.email, 'Role:', role);
 
-        const dest = role === 'admin' || role === 'coordinator' ? '/hq'
-          : role === 'engineer' ? '/engineer'
-          : '/customer';
-
-        console.log('[AuthCallback] Navigating to:', dest);
-        navigate(dest, { replace: true });
+        // Use the same redirect logic as email login
+        if (isSubdomainMode()) {
+          const domain = getSubdomainForRole(role);
+          const dest = `https://${domain}/`;
+          console.log('[AuthCallback] Cross-subdomain redirect to:', dest);
+          window.location.href = dest;
+        } else {
+          const path = getPortalPathForRole(role);
+          console.log('[AuthCallback] Single-domain redirect to:', path);
+          window.location.hash = `#${path}`;
+          window.location.reload();
+        }
       });
     }
 

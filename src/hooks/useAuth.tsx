@@ -1,12 +1,19 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CONTEXT — UptimeOps
-// Single source of truth for auth state. Syncs with Supabase.
+// Cookie-based cross-subdomain session. Redirects after login.
 // Admin (cumouat@gmail.com) gets admin role on all portals.
 // ═══════════════════════════════════════════════════════════════
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { User, AuthError } from '@supabase/supabase-js';
-import { supabase, isAdminEmail } from '@/lib/supabase/client';
+import {
+  supabase,
+  isSubdomainMode,
+  getSubdomainForRole,
+  getPortalPathForRole,
+  isAdminEmail,
+  SUBDOMAINS,
+} from '@/lib/supabase/client';
 import type { UserRole } from '@/lib/supabase/client';
 
 // ── Types ──
@@ -25,14 +32,12 @@ interface AuthContextType extends AuthState {
   sendPasswordReset: (email: string) => Promise<{ error: AuthError | null }>;
 }
 
-// ── Resolve role for a user (used everywhere) ──
 function resolveRole(user: User | null): UserRole {
   if (!user) return 'public';
   if (isAdminEmail(user.email)) return 'admin';
-  return 'customer'; // Default for all non-admin users
+  return 'customer';
 }
 
-// ── Context ──
 const AuthContext = createContext<AuthContextType>({
   user: null, role: 'public', isLoading: true, isAuthenticated: false,
   signIn: async () => ({ error: null }),
@@ -42,7 +47,24 @@ const AuthContext = createContext<AuthContextType>({
   sendPasswordReset: async () => ({ error: null }),
 });
 
-// ── Provider ──
+// ── Redirect after login based on subdomain vs single-domain mode ──
+function doPostLoginRedirect(role: UserRole) {
+  if (isSubdomainMode()) {
+    // Cross-subdomain: full-page redirect to the correct subdomain
+    const domain = getSubdomainForRole(role);
+    const dest = `https://${domain}/`;
+    console.log('[Auth] Cross-subdomain redirect to:', dest);
+    window.location.href = dest;
+  } else {
+    // Single-domain (Vercel / localhost): hash-based navigation
+    const path = getPortalPathForRole(role);
+    console.log('[Auth] Single-domain redirect to:', path);
+    window.location.hash = `#${path}`;
+    // Force reload so the route picks up the new auth state cleanly
+    window.location.reload();
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -51,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
   });
 
-  // ── Initialize: check for existing session on mount ──
+  // ── Initialize: check for existing session ──
   useEffect(() => {
     let mounted = true;
 
@@ -71,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[Auth] Session restored:', session.user.email, 'role:', role);
           setState({ user: session.user, role, isLoading: false, isAuthenticated: true });
         } else {
-          console.log('[Auth] No session');
+          console.log('[Auth] No session found');
           setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
         }
       } catch (err: any) {
@@ -84,7 +106,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     init();
 
-    // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       const user = session?.user ?? null;
@@ -97,7 +118,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ── Sign In (email/password) ──
-  // State update is handled by onAuthStateChange — we just return the result
   const signIn = useCallback(async (email: string, password: string) => {
     console.log('[Auth] signIn:', email);
     try {
@@ -116,7 +136,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const role = resolveRole(data.session.user);
       console.log('[Auth] Signed in:', data.session.user.email, 'role:', role);
-      // onAuthStateChange will update state — don't double-set here
+
+      // State is updated by onAuthStateChange, then we redirect
+      // Small delay to let state settle before redirect
+      setTimeout(() => doPostLoginRedirect(role), 100);
+
       return { error: null, role };
     } catch (err: any) {
       console.error('[Auth] signIn exception:', err?.message);
@@ -138,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (data.session?.user) {
         const role = resolveRole(data.session.user);
+        setTimeout(() => doPostLoginRedirect(role), 100);
         return { error: null, role };
       }
 
@@ -166,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data?.url) {
-        window.location.href = data.url;
+        window.location.href = data.url; // Redirect to OAuth provider
       }
 
       return { error: null };
@@ -180,7 +205,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     console.log('[Auth] signOut');
     await supabase.auth.signOut();
-    setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+    // On subdomain mode, redirect to www login page
+    // On single-domain, reload to clear state and land on login
+    if (isSubdomainMode()) {
+      window.location.href = `https://${SUBDOMAINS.www}/#/login`;
+    } else {
+      window.location.hash = '#/login';
+      window.location.reload();
+    }
   }, []);
 
   // ── Password Reset ──
@@ -202,7 +234,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── Hook ──
 export function useAuth() {
   return useContext(AuthContext);
 }
