@@ -1,113 +1,126 @@
 // ═══════════════════════════════════════════════════════════════
-// AUTH CALLBACK — Handles OAuth redirect from GitHub/Google
-// CRITICAL: Polls for session instead of relying on detectSessionInUrl
-// which doesn't work with HashRouter (OAuth params are in hash, not search).
+// AUTH CALLBACK — Handles OAuth redirect (Google/GitHub)
+// Extracts PKCE code from URL, exchanges for session, redirects by role.
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase/client';
+import { supabase, isAdminEmail } from '@/lib/supabase/client';
 import { Loader2, Zap } from 'lucide-react';
 
-const POLL_INTERVAL = 500;   // Check every 500ms
-const MAX_WAIT_MS = 10000;   // Give up after 10 seconds
+const POLL_MS = 400;
+const TIMEOUT_MS = 8000;
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
-  const [status, setStatus] = useState<'waiting' | 'found' | 'timeout'>('waiting');
+  const [phase, setPhase] = useState<'processing' | 'found' | 'timeout'>('processing');
   const [attempts, setAttempts] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const elapsedRef = useRef(0);
+  const doneRef = useRef(false);
 
   useEffect(() => {
-    console.log('[AuthCallback] Mounted. URL:', window.location.href);
-    console.log('[AuthCallback] Hash:', window.location.hash);
+    console.log('[AuthCallback] Mounted');
+    console.log('[AuthCallback] Full URL:', window.location.href);
     console.log('[AuthCallback] Search:', window.location.search);
+    console.log('[AuthCallback] Hash:', window.location.hash);
 
-    // Check if there are OAuth params in the hash (HashRouter issue)
-    const hash = window.location.hash;
-    const hasOAuthParams = hash.includes('code=') || hash.includes('access_token=');
-    console.log('[AuthCallback] Has OAuth params in hash:', hasOAuthParams);
+    // Extract PKCE code from URL (could be in search OR hash)
+    const params = new URLSearchParams(window.location.search);
+    let code = params.get('code');
 
-    // Try to get session immediately
-    async function tryGetSession() {
-      const { data, error } = await supabase.auth.getSession();
-      console.log('[AuthCallback] getSession result:', {
-        hasSession: !!data.session,
-        user: data.session?.user?.email || null,
-        error: error?.message || null,
-      });
-
-      if (data.session?.user) {
-        // Session found!
-        console.log('[AuthCallback] Session found for:', data.session.user.email);
-        const email = data.session.user.email;
-        const isAdmin = email?.toLowerCase() === 'cumouat@gmail.com'.toLowerCase();
-        const role = (isAdmin ? 'admin' : 'customer') as import('@/lib/supabase/client').UserRole;
-
-        setStatus('found');
-
-        // Small delay to let auth context pick up the state
-        setTimeout(() => {
-          if (!isSubdomainMode()) {
-            const dest = getPathForRole(role);
-            console.log('[AuthCallback] Navigating to:', dest);
-            navigate(dest, { replace: true });
-          } else {
-            const domain = getDomainForRole(role);
-            window.location.href = `https://${domain}/#/hq`;
-          }
-        }, 300);
-
-        return true;
+    // If not in search, check hash (HashRouter puts params after #)
+    if (!code && window.location.hash.includes('?')) {
+      const hashSearch = window.location.hash.split('?')[1];
+      if (hashSearch) {
+        const hashParams = new URLSearchParams(hashSearch);
+        code = hashParams.get('code');
       }
-      return false;
     }
 
-    // Start polling
-    async function startPolling() {
-      const found = await tryGetSession();
-      if (found) return;
+    console.log('[AuthCallback] PKCE code found:', !!code);
 
-      intervalRef.current = setInterval(async () => {
-        elapsedRef.current += POLL_INTERVAL;
-        setAttempts(prev => prev + 1);
+    async function run() {
+      // Step 1: If we have a code, exchange it for a session
+      if (code) {
+        console.log('[AuthCallback] Exchanging code for session...');
+        try {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            console.error('[AuthCallback] exchangeCodeForSession error:', error.message);
+          } else if (data.session) {
+            console.log('[AuthCallback] Session created via code exchange');
+          }
+        } catch (err: any) {
+          console.error('[AuthCallback] exchangeCodeForSession exception:', err?.message);
+        }
+      }
 
-        const found = await tryGetSession();
-        if (found) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          if (timerRef.current) clearTimeout(timerRef.current);
+      // Step 2: Poll for session (Supabase may also auto-detect via detectSessionInUrl)
+      const start = Date.now();
+
+      const check = async (): Promise<boolean> => {
+        const { data } = await supabase.auth.getSession();
+        return !!data.session?.user;
+      };
+
+      // Immediate check
+      if (await check()) {
+        handleSessionFound();
+        return;
+      }
+
+      // Poll
+      const interval = setInterval(async () => {
+        const elapsed = Date.now() - start;
+        setAttempts(Math.floor(elapsed / POLL_MS));
+
+        if (await check()) {
+          clearInterval(interval);
+          handleSessionFound();
           return;
         }
 
-        if (elapsedRef.current >= MAX_WAIT_MS) {
-          console.log('[AuthCallback] Timeout — no session found after', MAX_WAIT_MS, 'ms');
-          setStatus('timeout');
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          navigate('/login?error=auth_timeout', { replace: true });
+        if (elapsed >= TIMEOUT_MS) {
+          clearInterval(interval);
+          console.error('[AuthCallback] Timeout waiting for session');
+          setPhase('timeout');
+          setTimeout(() => navigate('/login?error=auth_timeout', { replace: true }), 500);
         }
-      }, POLL_INTERVAL);
+      }, POLL_MS);
 
-      // Safety timeout
-      timerRef.current = setTimeout(() => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-      }, MAX_WAIT_MS + 1000);
+      return () => clearInterval(interval);
     }
 
-    startPolling();
+    function handleSessionFound() {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('found');
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+      // Get user and determine role
+      supabase.auth.getSession().then(({ data }) => {
+        const user = data.session?.user;
+        if (!user) {
+          navigate('/login?error=no_user', { replace: true });
+          return;
+        }
+
+        const role: string = isAdminEmail(user.email) ? 'admin' : 'customer';
+        console.log('[AuthCallback] User:', user.email, 'Role:', role);
+
+        const dest = role === 'admin' || role === 'coordinator' ? '/hq'
+          : role === 'engineer' ? '/engineer'
+          : '/customer';
+
+        console.log('[AuthCallback] Navigating to:', dest);
+        navigate(dest, { replace: true });
+      });
+    }
+
+    run();
   }, [navigate]);
 
-  const statusMessage = status === 'found'
-    ? 'Session found — redirecting...'
-    : status === 'timeout'
-      ? 'Session timeout — redirecting to login...'
-      : `Waiting for session... (${attempts})`;
+  const msg = phase === 'found' ? 'Redirecting...'
+    : phase === 'timeout' ? 'Session timeout — redirecting to login...'
+    : `Processing authentication... (${attempts})`;
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
@@ -119,26 +132,9 @@ export function AuthCallbackPage() {
           </span>
         </div>
         <Loader2 className="w-6 h-6 text-[#a3e635] animate-spin mx-auto" />
-        <p className="text-xs text-white/40 font-mono uppercase tracking-wider">{statusMessage}</p>
-        <p className="text-[10px] text-white/20 font-mono">Open browser console (F12) for debug logs</p>
+        <p className="text-xs text-white/40 font-mono uppercase tracking-wider">{msg}</p>
+        <p className="text-[10px] text-white/20 font-mono">Open F12 console for debug logs</p>
       </div>
     </div>
   );
-}
-
-function isSubdomainMode(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.location.hostname.endsWith('uptimeops.org') && !window.location.hostname.includes('vercel.app');
-}
-
-function getPathForRole(role: string): string {
-  if (role === 'admin' || role === 'coordinator') return '/hq';
-  if (role === 'engineer') return '/engineer';
-  return '/customer';
-}
-
-function getDomainForRole(role: string): string {
-  if (role === 'admin' || role === 'coordinator') return 'dashboard.uptimeops.org';
-  if (role === 'engineer') return 'engineers.uptimeops.org';
-  return 'app.uptimeops.org';
 }

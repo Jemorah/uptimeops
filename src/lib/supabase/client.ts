@@ -1,11 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
-// SUPABASE CLIENT — UptimeOps Multi-Subdomain
-// Cookie-based session storage for cross-domain auth sharing.
-//
-// CRITICAL: detectSessionInUrl is DISABLED because it conflicts
-// with HashRouter. OAuth params are in the hash fragment, not
-// the URL query string, so Supabase can't auto-detect them.
-// Instead, AuthCallbackPage manually handles the OAuth callback.
+// SUPABASE CLIENT — UptimeOps
+// Primary: localStorage (reliable, battle-tested)
+// Mirror:   cookies with domain=.uptimeops.org (for cross-subdomain only)
+// On Vercel: localStorage only (single domain — cookies scoped to hostname)
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@supabase/supabase-js';
@@ -13,81 +10,72 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = 'https://npcopjsqgjvirfjnjemt.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wY29wanNxZ2p2aXJmam5qZW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDkzMjgsImV4cCI6MjA5Nzk4NTMyOH0.5tm3GfGwUVT__BdxVgzXvf7FByxUShKKfdujTkVfXh8';
 
-function getRootDomain(): string {
-  const host = typeof window !== 'undefined' ? window.location.hostname : '';
-  if (host.endsWith('uptimeops.org')) return '.uptimeops.org';
-  if (host.endsWith('uptimeops.com')) return '.uptimeops.com';
-  if (host.includes('vercel.app') || host === 'localhost') return host;
-  return host;
-}
-
-function isLocalhost(): boolean {
-  if (typeof window === 'undefined') return false;
-  const h = window.location.hostname;
-  return h === 'localhost' || h === '127.0.0.1';
-}
-
-function setCookie(name: string, value: string, options?: { maxAge?: number; expires?: Date }) {
-  const domain = getRootDomain();
-  const secure = !isLocalhost();
-  let cookie = `${name}=${encodeURIComponent(value)};path=/;SameSite=Lax`;
-  cookie += `;domain=${domain}`;
-  if (secure) cookie += ';Secure';
-  if (options?.maxAge) cookie += `;max-age=${options.maxAge}`;
-  if (options?.expires) cookie += `;expires=${options.expires.toUTCString()}`;
-  document.cookie = cookie;
-}
-
+// ── Cross-subdomain cookie mirror (only on uptimeops.org) ──
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function deleteCookie(name: string) {
-  const domain = getRootDomain();
-  document.cookie = `${name}=;path=/;domain=${domain};expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-  document.cookie = `${name}=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+function setCookie(name: string, value: string, maxAge: number) {
+  const host = window.location.hostname;
+  if (!host.endsWith('uptimeops.org')) return; // Only set on custom domain
+  let cookie = `${name}=${encodeURIComponent(value)};path=/;SameSite=Lax;Secure`;
+  cookie += `;domain=.uptimeops.org`;
+  cookie += `;max-age=${maxAge}`;
+  document.cookie = cookie;
 }
 
-const COOKIE_KEY = 'sb-session';
+function deleteCookie(name: string) {
+  const host = window.location.hostname;
+  if (!host.endsWith('uptimeops.org')) return;
+  document.cookie = `${name}=;path=/;domain=.uptimeops.org;expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+}
 
-// Supabase calls storage with key = storageKey ('sb-session').
-// Must handle 'sb-session' directly, not just 'sb-session-auth-token'.
-const cookieStorage: Storage = {
-  get length() { return getCookie(COOKIE_KEY) ? 1 : 0; },
-  key() { return COOKIE_KEY; },
+// ── localStorage + optional cookie mirror ──
+const STORAGE_KEY = 'sb-session';
+
+const hybridStorage: Storage = {
+  get length() { return localStorage.getItem(STORAGE_KEY) ? 1 : 0; },
+  key() { return STORAGE_KEY; },
   getItem(key: string): string | null {
-    if (key.includes('auth-token') || key === COOKIE_KEY) return getCookie(COOKIE_KEY);
-    return getCookie(key) || null;
+    const val = localStorage.getItem(key);
+    if (val) return val;
+    // Fallback to cookie (cross-subdomain migration)
+    return key.includes('auth-token') || key === STORAGE_KEY ? getCookie(STORAGE_KEY) : null;
   },
   setItem(key: string, value: string): void {
-    if (key.includes('auth-token') || key === COOKIE_KEY) {
+    localStorage.setItem(key, value);
+    // Mirror to cookie for cross-subdomain (uptimeops.org only)
+    if (key.includes('auth-token') || key === STORAGE_KEY) {
       try {
         const parsed = JSON.parse(value);
         const expiresAt = parsed?.expires_at;
         const maxAge = expiresAt ? Math.floor(expiresAt - Date.now() / 1000) : 604800;
-        setCookie(COOKIE_KEY, value, { maxAge });
+        setCookie(STORAGE_KEY, value, maxAge);
       } catch {
-        setCookie(COOKIE_KEY, value, { maxAge: 604800 });
+        setCookie(STORAGE_KEY, value, 604800);
       }
     }
   },
   removeItem(key: string): void {
-    if (key.includes('auth-token') || key === COOKIE_KEY) deleteCookie(COOKIE_KEY);
+    localStorage.removeItem(key);
+    if (key.includes('auth-token') || key === STORAGE_KEY) deleteCookie(STORAGE_KEY);
   },
   clear(): void {
-    deleteCookie(COOKIE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    deleteCookie(STORAGE_KEY);
   },
 };
 
+// ── Supabase client ──
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false, // DISABLED — HashRouter puts params in hash, not search
+    detectSessionInUrl: true,  // ENABLED — handles OAuth callback auto-detection
     flowType: 'pkce',
-    storage: cookieStorage,
-    storageKey: 'sb-session',
+    storage: hybridStorage,
+    storageKey: STORAGE_KEY,
   },
   realtime: {
     params: { eventsPerSecond: 10 },
@@ -109,26 +97,6 @@ export function isSubdomainMode(): boolean {
   return host.endsWith('uptimeops.org') && !host.includes('vercel.app');
 }
 
-export function isWwwDomain(): boolean {
-  if (typeof window === 'undefined') return true;
-  const host = window.location.hostname;
-  return host === 'localhost'
-    || host === '127.0.0.1'
-    || host === 'www.uptimeops.org'
-    || host === 'uptimeops.org'
-    || host.includes('vercel.app');
-}
-
-export function getSubdomainForRole(role: UserRole): string {
-  switch (role) {
-    case 'customer': return SUBDOMAINS.app;
-    case 'coordinator':
-    case 'admin': return SUBDOMAINS.dashboard;
-    case 'engineer': return SUBDOMAINS.engineers;
-    default: return SUBDOMAINS.www;
-  }
-}
-
 export function getPortalPathForRole(role: UserRole): string {
   switch (role) {
     case 'customer': return '/customer';
@@ -147,7 +115,7 @@ export function getCurrentPortal(): 'www' | 'app' | 'dashboard' | 'engineers' {
   if (host.startsWith('engineers.')) return 'engineers';
   const hash = window.location.hash;
   if (hash.startsWith('#/customer')) return 'app';
-  if (hash.startsWith('#/hq')) return 'dashboard';
+  if (hash.startsWith('#/hq')) return 'hq' as 'dashboard';
   if (hash.startsWith('#/engineer')) return 'engineers';
   return 'www';
 }

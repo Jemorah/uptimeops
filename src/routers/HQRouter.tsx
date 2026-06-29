@@ -8,7 +8,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { PortalLayout } from '@/layouts/PortalLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { useWrongSubdomainCheck } from '@/hooks/useAuth';
 
 const HQDashboard      = lazy(() => import('@/pages/hq/HQDashboard').then(m => ({ default: m.HQDashboard })));
 const HQIncidents      = lazy(() => import('@/pages/hq/HQIncidents').then(m => ({ default: m.HQIncidents })));
@@ -22,7 +21,6 @@ const HQGuidelines     = lazy(() => import('@/pages/hq/HQGuidelines').then(m => 
 const HQSettings       = lazy(() => import('@/pages/hq/HQSettings').then(m => ({ default: m.HQSettings })));
 
 export function HQRouter() {
-  useWrongSubdomainCheck();
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>

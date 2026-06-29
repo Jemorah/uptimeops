@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // SIGNUP PAGE — UptimeOps
-// Registration with email, password, name
+// Registration with email, password, name. Redirects to portal by role.
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
@@ -8,19 +8,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAuth, getPostLoginDestination } from '@/hooks/useAuth';
-import { isSubdomainMode } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export function SignupPage() {
   const navigate = useNavigate();
   const { signUp, isAuthenticated, role } = useAuth();
 
-  // Redirect if already logged in
+  // Already logged in → redirect to portal
   if (isAuthenticated && role && role !== 'public') {
-    if (!isSubdomainMode()) {
-      navigate(getPostLoginDestination(role, null), { replace: true });
-    }
+    const dest = role === 'admin' || role === 'coordinator' ? '/hq'
+      : role === 'engineer' ? '/engineer'
+      : '/customer';
+    navigate(dest, { replace: true });
     return null;
   }
 
@@ -44,22 +44,26 @@ export function SignupPage() {
 
     setIsLoading(true);
     const { error, role: returnedRole } = await signUp(email, password, { full_name: fullName });
-    setIsLoading(false);
 
     if (error) {
+      setIsLoading(false);
       toast.error(error.message);
-    } else if (returnedRole && returnedRole !== 'public') {
-      // Auto-redirect if session was created immediately
-      if (!isSubdomainMode()) {
-        navigate(getPostLoginDestination(returnedRole, null));
-        return;
-      }
-      setConfirmed(true);
-      toast.success('Account created! Check your email for confirmation.');
-    } else {
-      setConfirmed(true);
-      toast.success('Account created! Check your email for confirmation.');
+      return;
     }
+
+    if (returnedRole && returnedRole !== 'public') {
+      // Session created immediately → redirect
+      const dest = returnedRole === 'admin' || returnedRole === 'coordinator' ? '/hq'
+        : returnedRole === 'engineer' ? '/engineer'
+        : '/customer';
+      navigate(dest);
+      return;
+    }
+
+    // Email confirmation required
+    setIsLoading(false);
+    setConfirmed(true);
+    toast.success('Account created! Check your email for confirmation.');
   };
 
   if (confirmed) {

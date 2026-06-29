@@ -8,7 +8,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { PortalLayout } from '@/layouts/PortalLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { useWrongSubdomainCheck } from '@/hooks/useAuth';
 
 const EngineerDashboard = lazy(() => import('@/pages/engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
 const EngineerSessions  = lazy(() => import('@/pages/engineer/EngineerSessions').then(m => ({ default: m.EngineerSessions })));
@@ -20,7 +19,6 @@ const EngineerSecurity  = lazy(() => import('@/pages/engineer/EngineerSecurity')
 const EngineerSettings  = lazy(() => import('@/pages/engineer/EngineerSettings').then(m => ({ default: m.EngineerSettings })));
 
 export function EngineerRouter() {
-  useWrongSubdomainCheck();
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>

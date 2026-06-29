@@ -8,7 +8,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { PortalLayout } from '@/layouts/PortalLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { useWrongSubdomainCheck } from '@/hooks/useAuth';
 
 const CustomerDashboard = lazy(() => import('@/pages/customer/CustomerDashboard').then(m => ({ default: m.CustomerDashboard })));
 const CustomerIncidents = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
@@ -19,7 +18,6 @@ const CustomerSecurity  = lazy(() => import('@/pages/customer/CustomerSecurity')
 const CustomerSettings  = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
 
 export function CustomerRouter() {
-  useWrongSubdomainCheck();
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
