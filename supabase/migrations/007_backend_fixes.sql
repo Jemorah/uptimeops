@@ -21,21 +21,19 @@ CREATE INDEX IF NOT EXISTS idx_coordinator_user ON coordinator_profiles(user_id)
 CREATE INDEX IF NOT EXISTS idx_coordinator_email ON coordinator_profiles(email);
 
 -- custom_guidelines
-CREATE INDEX IF NOT EXISTS idx_guidelines_customer ON custom_guidelines(customer_id);
+CREATE INDEX IF NOT EXISTS idx_guidelines_project ON custom_guidelines(project_id);
 CREATE INDEX IF NOT EXISTS idx_guidelines_severity ON custom_guidelines(severity);
 
--- engineer_invitations
+-- engineer_invitations (no status column - has invited_by, used_at instead)
 CREATE INDEX IF NOT EXISTS idx_invitations_email ON engineer_invitations(email);
-CREATE INDEX IF NOT EXISTS idx_invitations_status ON engineer_invitations(status);
 CREATE INDEX IF NOT EXISTS idx_invitations_token ON engineer_invitations(token);
 
--- opsgenie_sync
+-- opsgenie_sync (column is sync_status, not status)
 CREATE INDEX IF NOT EXISTS idx_opsgenie_engineer ON opsgenie_sync(engineer_id);
-CREATE INDEX IF NOT EXISTS idx_opsgenie_status ON opsgenie_sync(sync_status);
+CREATE INDEX IF NOT EXISTS idx_opsgenie_sync_status ON opsgenie_sync(sync_status);
 
--- projects
+-- projects (no status column - has name, repo_url, stack_type)
 CREATE INDEX IF NOT EXISTS idx_projects_customer ON projects(customer_id);
-CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 
 -- repair_patches
 CREATE INDEX IF NOT EXISTS idx_repair_incident ON repair_patches(incident_id);
