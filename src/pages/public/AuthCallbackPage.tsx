@@ -1,111 +1,193 @@
 // ═══════════════════════════════════════════════════════════════
-// AUTH CALLBACK — Handles OAuth redirect (Google/GitHub)
-// Exchanges PKCE code for session. Watches isAuthenticated to navigate.
+// AUTH CALLBACK — OAuth redirect handler
+// Processes session from URL, hydrates role, routes with intent
 // ═══════════════════════════════════════════════════════════════
 
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase/client';
-import { Loader2, Zap } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import type { UserRole } from '@/lib/supabase/client';
+import { toast } from 'sonner';
+import {
+  Zap, AlertCircle, CheckCircle2
+} from 'lucide-react';
 
-const POLL_MS = 400;
-const TIMEOUT_MS = 8000;
+// ── Intent routing (mirrors AuthConsole logic) ──
+function getPostAuthDestination(
+  role: UserRole,
+  searchParams: URLSearchParams
+): string {
+  const intent = searchParams.get('intent');
+  const plan = searchParams.get('plan');
+  const billing = searchParams.get('billing');
+  const tier = searchParams.get('tier');
+  const track = searchParams.get('track');
+  const leadId = searchParams.get('lead_id');
+
+  if (intent === 'subscribe' && plan) {
+    return `/customer/billing?plan=${plan}${billing ? `&billing=${billing}` : ''}`;
+  }
+  if (intent === 'emergency' && tier) {
+    return `/emergency?tier=${tier}${track ? `&track=${track}` : ''}`;
+  }
+  if (leadId) return `/customer/incidents?lead=${leadId}`;
+
+  switch (role) {
+    case 'admin':
+    case 'coordinator': return '/hq';
+    case 'engineer': return '/engineer';
+    case 'customer': return '/customer';
+    default: return '/customer';
+  }
+}
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, role } = useAuth();
-  const [phase, setPhase] = useState<'processing' | 'timeout'>('processing');
+  const [searchParams] = useSearchParams();
+  const { role } = useAuth();
+
+  const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
+  const [message, setMessage] = useState('Completing authentication...');
   const [attempts, setAttempts] = useState(0);
-  const doneRef = useRef(false);
 
-  // ── Step 1: Exchange PKCE code for session ──
   useEffect(() => {
-    // Auth callback mounted — processing OAuth redirect
+    let cancelled = false;
 
-    // Extract code from URL
-    const params = new URLSearchParams(window.location.search);
-    let code = params.get('code');
-    if (!code && window.location.hash.includes('?')) {
-      const qs = window.location.hash.split('?')[1];
-      if (qs) code = new URLSearchParams(qs).get('code');
-    }
+    const handleCallback = async () => {
+      // The OAuth flow with PKCE stores the session in the URL hash.
+      // With detectSessionInUrl: false in our client config, we need
+      // to manually extract and set the session from the URL.
+      const hash = window.location.hash;
+      const params = new URLSearchParams(hash.replace('#', '').replace(/^\//, ''));
 
-    if (!code) {
-      // No code in URL — not an OAuth callback
-      return;
-    }
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const type = params.get('type');
 
-    async function exchange() {
-      // Exchanging PKCE code for session
-      try {
-        const { error } = await supabase.auth.exchangeCodeForSession(code!);
-        if (error) {/* exchange failed — will retry via polling */}
-      } catch (err: any) {
-        {/* exchange exception — will retry via polling */}
-      }
-    }
+      if (accessToken) {
+        // Manually set the session from the URL tokens
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || '',
+        });
 
-    exchange();
-  }, []);
+        if (error) {
+          if (cancelled) return;
+          setStatus('error');
+          setMessage(`Session error: ${error.message}`);
+          toast.error(`Auth callback failed: ${error.message}`);
+          // Retry after delay
+          if (attempts < 3) {
+            setTimeout(() => {
+              setAttempts(a => a + 1);
+              setStatus('processing');
+              setMessage(`Retrying (${attempts + 1}/3)...`);
+              handleCallback();
+            }, 2000 * (attempts + 1));
+          }
+          return;
+        }
 
-  // ── Step 2: Poll until session appears (onAuthStateChange fires) ──
-  useEffect(() => {
-    if (doneRef.current) return;
+        if (cancelled) return;
+        setStatus('success');
+        setMessage('Authentication successful!');
+        toast.success('Signed in successfully');
 
-    const start = Date.now();
-    const interval = setInterval(async () => {
-      if (doneRef.current) { clearInterval(interval); return; }
-
-      const elapsed = Date.now() - start;
-      setAttempts(Math.floor(elapsed / POLL_MS));
-
-      // Check if we have a session
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        // Session found via poll
-        doneRef.current = true;
-        clearInterval(interval);
-        // onAuthStateChange will update isAuthenticated
-        // Second useEffect below will navigate
+        // Wait for auth context to hydrate role
+        setTimeout(() => {
+          if (cancelled) return;
+          const dest = getPostAuthDestination(role || 'customer', searchParams);
+          navigate(dest, { replace: true });
+        }, 500);
         return;
       }
 
-      if (elapsed >= TIMEOUT_MS) {
-        doneRef.current = true;
-        clearInterval(interval);
-        // Auth callback timeout
-        setPhase('timeout');
-        setTimeout(() => navigate('/login?error=timeout', { replace: true }), 1000);
+      // No tokens in URL — check if we already have a session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        if (cancelled) return;
+        setStatus('success');
+        setMessage('Already authenticated');
+        const dest = getPostAuthDestination(role || 'customer', searchParams);
+        navigate(dest, { replace: true });
+        return;
       }
-    }, POLL_MS);
 
-    return () => clearInterval(interval);
-  }, [navigate]);
+      // Handle password recovery callback
+      if (type === 'recovery') {
+        if (cancelled) return;
+        navigate('/reset-password', { replace: true });
+        return;
+      }
 
-  // ── Step 3: When isAuthenticated becomes true, navigate ──
-  useEffect(() => {
-    if (isAuthenticated && role && role !== 'public') {
-      // Authenticated — navigating to portal
-      const dest = role === 'admin' || role === 'coordinator' ? '/hq'
-        : role === 'engineer' ? '/engineer'
-        : '/customer';
-      navigate(dest, { replace: true });
-    }
-  }, [isAuthenticated, role, navigate]);
+      if (cancelled) return;
+      setStatus('error');
+      setMessage('No authentication tokens found. Please try again.');
+    };
 
-  const msg = phase === 'timeout' ? 'Session timeout — redirecting...'
-    : `Completing sign-in... (${attempts})`;
+    handleCallback();
+
+    return () => { cancelled = true; };
+  }, [navigate, role, searchParams, attempts]);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-      <div className="text-center space-y-4">
-        <div className="flex items-center gap-2 justify-center">
-          <Zap className="w-5 h-5 text-[#a3e635] animate-pulse" />
-          <span className="text-sm font-black tracking-tight text-white/60">UPTIME<span className="text-[#a3e635]">OPS</span></span>
+    <div className="min-h-screen bg-void flex items-center justify-center px-4">
+      <div className="w-full max-w-sm text-center space-y-6">
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-2">
+          <Zap className="w-6 h-6 text-lime" />
+          <span className="text-lg font-black tracking-tight text-text-primary">
+            UPTIME<span className="text-lime">OPS</span>
+          </span>
         </div>
-        <Loader2 className="w-6 h-6 text-[#a3e635] animate-spin mx-auto" />
-        <p className="text-xs text-white/40 font-mono uppercase">{msg}</p>
+
+        {/* Status Card */}
+        <div className="glass-surface rounded-xl p-8 space-y-4" style={{ borderColor: 'rgba(34,211,238,0.1)' }}>
+          {status === 'processing' && (
+            <div className="w-14 h-14 rounded-full border-4 border-cyan/20 border-t-cyan animate-spin mx-auto" />
+          )}
+          {status === 'success' && (
+            <div className="w-14 h-14 rounded-full bg-lime-dim border border-lime/30 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-7 h-7 text-lime" />
+            </div>
+          )}
+          {status === 'error' && (
+            <div className="w-14 h-14 rounded-full bg-rose-dim border border-rose/30 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-7 h-7 text-rose" />
+            </div>
+          )}
+
+          <div>
+            <h2 className="text-lg font-black text-text-primary">
+              {status === 'processing' ? 'Authenticating...' : status === 'success' ? 'Success!' : 'Authentication Error'}
+            </h2>
+            <p className="text-sm text-text-secondary mt-1">{message}</p>
+          </div>
+
+          {status === 'processing' && (
+            <p className="text-[10px] text-text-muted font-mono">
+              {attempts > 0 ? `Retry attempt ${attempts}/3` : 'Processing OAuth tokens...'}
+            </p>
+          )}
+
+          {status === 'error' && (
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full py-2.5 bg-cyan text-void-dark text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-cyan-light transition-colors"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate('/login', { replace: true })}
+                className="w-full py-2.5 bg-void-light border border-surface-border text-text-secondary text-xs font-bold uppercase tracking-wider rounded-lg hover:text-text-primary transition-colors"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

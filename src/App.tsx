@@ -7,12 +7,12 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import CyberLayout from '@/layouts/CyberLayout';
+import AuthLayout from '@/layouts/AuthLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 // ── Public pages ──
 const LandingPage      = lazy(() => import('@/pages/public/LandingPage').then(m => ({ default: m.LandingPage })));
-const LoginPage        = lazy(() => import('@/pages/public/LoginPage').then(m => ({ default: m.LoginPage })));
-const SignupPage       = lazy(() => import('@/pages/public/SignupPage').then(m => ({ default: m.SignupPage })));
+const AuthConsole      = lazy(() => import('@/pages/public/AuthConsole').then(m => ({ default: m.AuthConsole })));
 const ForgotPassword   = lazy(() => import('@/pages/public/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
 const ResetPassword    = lazy(() => import('@/pages/public/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const AuthCallback     = lazy(() => import('@/pages/public/AuthCallbackPage').then(m => ({ default: m.AuthCallbackPage })));
@@ -58,11 +58,13 @@ export default function App() {
       <Routes>
         {/* ═══ PUBLIC ═══ */}
         <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+
+        {/* ═══ AUTH SUITE (50/50 Split Layout) ═══ */}
+        <Route path="/login" element={<AuthLayout><AuthConsole /></AuthLayout>} />
+        <Route path="/signup" element={<AuthLayout><AuthConsole /></AuthLayout>} />
+        <Route path="/forgot-password" element={<AuthLayout><ForgotPassword /></AuthLayout>} />
+        <Route path="/reset-password" element={<AuthLayout><ResetPassword /></AuthLayout>} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/emergency" element={<EmergencyPage />} />
         <Route path="/status" element={<StatusPage />} />
