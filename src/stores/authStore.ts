@@ -1,25 +1,21 @@
 // ═══════════════════════════════════════════════════════════════
-// AUTH STORE — Zustand with localStorage persistence
-// Survives page reloads and cross-page navigation.
+// AUTH STORE — Zustand
+// Role is ALWAYS derived from the user — never persisted.
+// This prevents stale roles when switching accounts.
 // ═══════════════════════════════════════════════════════════════
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { User, Session } from '@supabase/supabase-js';
 
 export type UserRole = 'public' | 'customer' | 'engineer' | 'coordinator' | 'admin';
 
 interface AuthState {
-  // Core state
   user: User | null;
   session: Session | null;
   role: UserRole;
-  
-  // Loading
   isLoading: boolean;
   isInitialized: boolean;
-  
-  // Actions
+
   setUser: (user: User | null, session: Session | null) => void;
   setRole: (role: UserRole) => void;
   setLoading: (loading: boolean) => void;
@@ -29,7 +25,7 @@ interface AuthState {
 
 const ADMIN_EMAILS = ['cumouat@gmail.com'];
 
-function getRoleFromUser(user: User | null): UserRole {
+export function getRoleFromUser(user: User | null): UserRole {
   if (!user) return 'public';
   if (ADMIN_EMAILS.includes(user.email || '')) return 'admin';
   const metadataRole = user.user_metadata?.role as string;
@@ -39,49 +35,36 @@ function getRoleFromUser(user: User | null): UserRole {
   return 'customer';
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
+export const useAuthStore = create<AuthState>((set) => ({
+  user: null,
+  session: null,
+  role: 'public',
+  isLoading: true,
+  isInitialized: false,
+
+  setUser: (user, session) =>
+    set({
+      user,
+      session,
+      role: getRoleFromUser(user),
+    }),
+
+  setRole: (role) => set({ role }),
+
+  setLoading: (isLoading) => set({ isLoading }),
+
+  setInitialized: (isInitialized) => set({ isInitialized }),
+
+  clear: () =>
+    set({
       user: null,
       session: null,
       role: 'public',
-      isLoading: true,
-      isInitialized: false,
-
-      setUser: (user, session) =>
-        set({
-          user,
-          session,
-          role: getRoleFromUser(user),
-        }),
-
-      setRole: (role) => set({ role }),
-
-      setLoading: (isLoading) => set({ isLoading }),
-
-      setInitialized: (isInitialized) => set({ isInitialized }),
-
-      clear: () =>
-        set({
-          user: null,
-          session: null,
-          role: 'public',
-          isLoading: false,
-        }),
+      isLoading: false,
     }),
-    {
-      name: 'uptimeops-auth',
-      // Note: We intentionally do NOT persist role.
-      // Role is always derived from the user via getRoleFromUser().
-      // Persisting it causes stale roles when switching accounts.
-      partialize: (_state) => ({
-        // Only persist non-role state if needed
-      }),
-    }
-  )
-);
+}));
 
-// Keep auth store in sync with Supabase auth state
+// ── Keep auth store in sync with Supabase auth state ──
 import { supabase } from '@/lib/supabase/client';
 
 let authSubscription: ReturnType<typeof supabase.auth.onAuthStateChange> | null = null;
