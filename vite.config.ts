@@ -80,8 +80,8 @@ export default defineConfig(({ mode }) => {
       devSourcemap: true,
     },
 
-    // Environment variable prefix
-    envPrefix: "VITE_",
+    // Environment variable prefix — allow both VITE_ (legacy) and NEXT_SUPABASE_ (Supabase-Vercel sync)
+    envPrefix: ["VITE_", "NEXT_SUPABASE_"],
 
     // Optimize dependencies for faster dev
     optimizeDeps: {

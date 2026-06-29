@@ -51,7 +51,7 @@ export function EngineerOnboarding() {
       }
 
       try {
-        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co'}/functions/v1/engineer-onboard`, {
+        const resp = await fetch(`${import.meta.env.NEXT_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co'}/functions/v1/engineer-onboard`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get_invitation', token }),
@@ -96,7 +96,7 @@ export function EngineerOnboarding() {
 
     try {
       // Call the onboard function to create the account
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co'}/functions/v1/engineer-onboard`, {
+      const resp = await fetch(`${import.meta.env.NEXT_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co'}/functions/v1/engineer-onboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

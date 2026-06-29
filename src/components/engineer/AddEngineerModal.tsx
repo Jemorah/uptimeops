@@ -31,7 +31,7 @@ export function AddEngineerModal({ onClose, onSuccess }: Props) {
     setSubmitting(true);
 
     try {
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/engineer-onboard`, {
+      const resp = await fetch(`${import.meta.env.NEXT_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL}/functions/v1/engineer-onboard`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

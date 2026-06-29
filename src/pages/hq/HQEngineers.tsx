@@ -59,7 +59,7 @@ export function HQEngineers() {
         return;
       }
 
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co'}/functions/v1/send-engineer-invite`, {
+      const resp = await fetch(`${import.meta.env.NEXT_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || 'https://npcopjsqgjvirfjnjemt.supabase.co'}/functions/v1/send-engineer-invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
