@@ -35,6 +35,11 @@ export function getRoleFromUser(user: User | null): UserRole {
   return 'customer';
 }
 
+// Clear any stale persisted role from localStorage
+if (typeof window !== 'undefined') {
+  try { localStorage.removeItem('uptimeops-auth'); } catch { /* ignore */ }
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   session: null,
