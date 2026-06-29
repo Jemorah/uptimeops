@@ -35,7 +35,11 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true,
+    // CRITICAL: Must be FALSE with HashRouter. The hash fragment (/#/hq) is
+    // used for routing, not OAuth tokens. When true, Supabase parses "#/hq"
+    // as auth params, fails, and clears the session — causing instant redirect
+    // to login after every successful sign-in.
+    detectSessionInUrl: false,
     flowType: 'pkce',
     storage: localStorageAdapter,
     storageKey: 'sb-npcopjsqgjvirfjnjemt-auth-token',

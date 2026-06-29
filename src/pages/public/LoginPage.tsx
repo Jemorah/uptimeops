@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase/client';
 import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,7 +56,22 @@ export function LoginPage() {
           return;
         }
 
-        // SUCCESS — navigate directly
+        // SUCCESS — verify session persisted before navigating
+        // Small delay to let onAuthStateChange settle and localStorage write
+        await new Promise(r => setTimeout(r, 300));
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          // Session didn't persist — try refreshing
+          const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+          if (refreshErr || !refreshData.session?.user) {
+            setBusy(false);
+            setError('Session failed to persist. Please try again.');
+            toast.error('Session failed to persist. Please try again.');
+            return;
+          }
+        }
+
         const dest = result.role === 'admin' || result.role === 'coordinator' ? '/hq'
           : result.role === 'engineer' ? '/engineer'
           : '/customer';
