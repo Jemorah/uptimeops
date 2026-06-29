@@ -96,9 +96,12 @@ async function acceptInvitation(
   }).eq('id', invitation.id);
 
   // 6. Log the onboarding
-  await supabase.from('activity_log').insert({
-    type: 'engineer_onboarded',
-    user_id: userId,
+  await supabase.from('audit_logs').insert({
+    table_name: 'engineer_invitations',
+    record_id: invitation.id,
+    operation: 'engineer_onboarded',
+    performed_by_type: 'system',
+    performed_by_id: userId,
     metadata: {
       invited_by: invitation.invited_by,
       specialization: invitation.specialization,
@@ -170,9 +173,12 @@ async function createEngineer(
   await supabase.from('user_roles').insert({ user_id: userId, role: 'engineer' });
 
   // Log
-  await supabase.from('activity_log').insert({
-    type: 'engineer_created',
-    user_id: userId,
+  await supabase.from('audit_logs').insert({
+    table_name: 'engineer_profiles',
+    record_id: userId,
+    operation: 'engineer_created',
+    performed_by_type: 'coordinator',
+    performed_by_id: callerId,
     metadata: { created_by: callerId, specialization: data.specialization },
   });
 

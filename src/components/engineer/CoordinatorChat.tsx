@@ -84,19 +84,14 @@ export function CoordinatorChat({ incidentId }: CoordinatorChatProps) {
     setMessages(prev => [...prev, newMessage]);
     setInput('');
 
-    // Simulate coordinator reply after 2s
+    // Note: Real coordinator replies would come via Supabase realtime
+    // This is a placeholder until websocket chat is implemented
     setTimeout(() => {
-      const replies = [
-        'Got it, thanks for the update.',
-        'Keep me posted on the progress.',
-        'That sounds like the right approach.',
-        'Customer has been notified we\'re actively working on it.',
-      ];
       const reply: ChatMessage = {
         id: `cm-${Date.now() + 1}`,
-        sender: 'Sarah (Coordinator)',
+        sender: 'Coordinator',
         senderRole: 'coordinator',
-        content: replies[Math.floor(Math.random() * replies.length)],
+        content: 'Message received. Will review and respond shortly.',
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, reply]);

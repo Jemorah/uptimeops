@@ -229,7 +229,7 @@ export function VmTerminal({ websiteUrl }: VmTerminalProps) {
           timestamp: new Date().toISOString(),
         }]);
       }
-    }, 100 + Math.random() * 200);
+    }, 150);
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {

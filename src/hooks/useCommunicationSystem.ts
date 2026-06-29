@@ -19,11 +19,11 @@ export function useCommunicationSystem() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch comm logs from activity_log
+      // Fetch comm logs from audit_logs
       const { data: logData } = await supabase
-        .from('activity_log')
+        .from('audit_logs')
         .select('*')
-        .eq('type', 'communication')
+        .eq('table_name', 'communications_log')
         .order('created_at', { ascending: false })
         .limit(50);
 

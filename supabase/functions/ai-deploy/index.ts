@@ -147,13 +147,12 @@ serve(async (req) => {
     const uniqueBlockers = [...new Set(allBlockers)].slice(0, 10);
     const deploymentReady = uniqueBlockers.length === 0 && avgConfidence >= 85;
 
-    // Store deployment check
-    await supabase.from('deployment_checks').upsert({
-      incident_id, pipeline_id,
-      blockers: uniqueBlockers,
-      ready: deploymentReady,
+    // Store deployment check in deployment_snapshots
+    await supabase.from('deployment_snapshots').upsert({
+      incident_id,
       status: deploymentReady ? 'approved' : 'blocked',
-    }, { onConflict: 'incident_id,pipeline_id' });
+      metadata: { pipeline_id, blockers: uniqueBlockers, ready: deploymentReady },
+    }, { onConflict: 'incident_id' });
 
     logInfo(FUNCTION, 'Deploy validation complete', { incident_id, deployment_ready: deploymentReady, confidence: avgConfidence });
     return new Response(JSON.stringify({

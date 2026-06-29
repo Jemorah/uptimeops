@@ -143,13 +143,9 @@ export function EmergencyPage() {
     if (!chatInput.trim()) return;
     setChatMessages(prev => [...prev, { from: 'user', text: chatInput.trim() }]);
     setChatInput('');
+    // NOTE: Real chat would connect via Supabase realtime or WebSocket
     setTimeout(() => {
-      const replies = [
-        'I can see your fix is progressing well. The AI has identified the root cause.',
-        'Your site will be back online shortly. I\'ll keep you updated.',
-        'Good news — the smoke tests are passing. We\'re almost done!',
-      ];
-      setChatMessages(prev => [...prev, { from: 'support', text: replies[Math.floor(Math.random() * replies.length)] }]);
+      setChatMessages(prev => [...prev, { from: 'support', text: 'Message received. A coordinator will respond shortly. For urgent issues, call our emergency line.' }]);
     }, 1500);
   };
 

@@ -149,12 +149,16 @@ serve(async (req) => {
     const avgConfidence = Math.round(totalConfidence / scanEntries.length);
     const testsPassed = allTestResults.filter(t => t.passed).length;
 
-    // Store validation report
-    await supabase.from('validation_reports').upsert({
-      incident_id, pipeline_id,
-      test_summary: { total: allTestResults.length, passed: testsPassed, failed: allTestResults.length - testsPassed },
-      status: avgConfidence >= 80 ? 'passed' : avgConfidence >= 60 ? 'partial' : 'failed',
-    }, { onConflict: 'incident_id,pipeline_id' });
+    // Store validation report in scan_results as a summary entry
+    await supabase.from('scan_results').upsert({
+      incident_id,
+      agent_stage: 'validate',
+      scanner_name: 'Validation Summary',
+      status: 'completed',
+      confidence_score: avgConfidence,
+      parsed_output: { pipeline_id, test_summary: { total: allTestResults.length, passed: testsPassed, failed: allTestResults.length - testsPassed } },
+      severity_counts: { passed: testsPassed, failed: allTestResults.length - testsPassed },
+    }, { onConflict: 'incident_id,scanner_name' });
 
     logInfo(FUNCTION, 'Validation complete', { incident_id, tests_passed: testsPassed, confidence: avgConfidence });
     return new Response(JSON.stringify({

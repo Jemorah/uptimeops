@@ -21,7 +21,7 @@ export function AuthCallbackPage() {
 
   // ── Step 1: Exchange PKCE code for session ──
   useEffect(() => {
-    console.log('[AuthCallback] Mounted');
+    // Auth callback mounted — processing OAuth redirect
 
     // Extract code from URL
     const params = new URLSearchParams(window.location.search);
@@ -32,18 +32,17 @@ export function AuthCallbackPage() {
     }
 
     if (!code) {
-      console.log('[AuthCallback] No code in URL');
+      // No code in URL — not an OAuth callback
       return;
     }
 
     async function exchange() {
-      console.log('[AuthCallback] Exchanging code...');
+      // Exchanging PKCE code for session
       try {
         const { error } = await supabase.auth.exchangeCodeForSession(code!);
-        if (error) console.error('[AuthCallback] Exchange error:', error.message);
-        else console.log('[AuthCallback] Code exchanged successfully');
+        if (error) {/* exchange failed — will retry via polling */}
       } catch (err: any) {
-        console.error('[AuthCallback] Exchange exception:', err?.message);
+        {/* exchange exception — will retry via polling */}
       }
     }
 
@@ -64,7 +63,7 @@ export function AuthCallbackPage() {
       // Check if we have a session
       const { data } = await supabase.auth.getSession();
       if (data.session?.user) {
-        console.log('[AuthCallback] Session found via poll');
+        // Session found via poll
         doneRef.current = true;
         clearInterval(interval);
         // onAuthStateChange will update isAuthenticated
@@ -75,7 +74,7 @@ export function AuthCallbackPage() {
       if (elapsed >= TIMEOUT_MS) {
         doneRef.current = true;
         clearInterval(interval);
-        console.error('[AuthCallback] Timeout');
+        // Auth callback timeout
         setPhase('timeout');
         setTimeout(() => navigate('/login?error=timeout', { replace: true }), 1000);
       }
@@ -87,7 +86,7 @@ export function AuthCallbackPage() {
   // ── Step 3: When isAuthenticated becomes true, navigate ──
   useEffect(() => {
     if (isAuthenticated && role && role !== 'public') {
-      console.log('[AuthCallback] isAuthenticated=true, navigating to portal');
+      // Authenticated — navigating to portal
       const dest = role === 'admin' || role === 'coordinator' ? '/hq'
         : role === 'engineer' ? '/engineer'
         : '/customer';

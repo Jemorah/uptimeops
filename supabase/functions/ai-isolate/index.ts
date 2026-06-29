@@ -173,13 +173,10 @@ serve(async (req) => {
     const avgConfidence = Math.round(totalConfidence / scanEntries.length);
     const uniqueActions = [...new Set(allActions)].slice(0, 10);
 
-    // Create isolation recommendation record
-    await supabase.from('isolation_recommendations').insert({
-      incident_id,
-      pipeline_id,
-      actions: uniqueActions,
-      status: avgConfidence >= 70 ? 'recommended' : 'needs_review',
-    });
+    // Store isolation recommendation in pipeline_states
+    await supabase.from('pipeline_states').update({
+      step_results: { isolation_actions: uniqueActions, isolation_status: avgConfidence >= 70 ? 'recommended' : 'needs_review' },
+    }).eq('incident_id', incident_id);
 
     return new Response(JSON.stringify({
       success: true,

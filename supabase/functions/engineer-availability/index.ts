@@ -125,9 +125,12 @@ serve(async (req) => {
         .eq('status', 'pending_assignment');
 
       // Log assignment
-      await supabase.from('activity_log').insert({
-        type: 'engineer_assigned',
-        user_id: engineer.id,
+      await supabase.from('audit_logs').insert({
+        table_name: 'human_escalations',
+        record_id: incident_id,
+        operation: 'engineer_assigned',
+        performed_by_type: 'system',
+        performed_by_id: engineer.id,
         metadata: { incident_id, method: 'auto_assign', previous_count: engineer.active_incident_count },
       });
       return new Response(JSON.stringify({ assigned: true, engineer }), { headers: corsHeaders });
