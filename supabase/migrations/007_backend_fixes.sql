@@ -60,8 +60,9 @@ VALUES
   ('audit-evidence', 'audit-evidence', false)
 ON CONFLICT (id) DO NOTHING;
 
--- Enable RLS on storage.objects
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- NOTE: ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY requires
+-- superuser ownership. Skip it — Supabase already enables RLS on storage.
+-- ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies to avoid conflicts
 DO $$ BEGIN

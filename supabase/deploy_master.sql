@@ -827,25 +827,17 @@ VALUES ('session-recordings', 'session-recordings', false),
        ('audit-evidence', 'audit-evidence', false)
 ON CONFLICT (id) DO NOTHING;
 
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- NOTE: ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY requires
+-- superuser ownership. Skip — Supabase already enables RLS on storage.
+-- ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  DROP POLICY IF EXISTS session_recordings_read ON storage.objects;
-  DROP POLICY IF EXISTS session_recordings_insert ON storage.objects;
-  DROP POLICY IF EXISTS session_recordings_delete ON storage.objects;
-  DROP POLICY IF EXISTS audit_evidence_read ON storage.objects;
-  DROP POLICY IF EXISTS audit_evidence_insert ON storage.objects;
-  DROP POLICY IF EXISTS audit_evidence_delete ON storage.objects;
-  DROP POLICY IF EXISTS buckets_read ON storage.buckets;
-END $$;
-
-CREATE POLICY "session_recordings_read" ON storage.objects FOR SELECT USING (bucket_id = 'session-recordings');
-CREATE POLICY "session_recordings_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'session-recordings');
-CREATE POLICY "session_recordings_delete" ON storage.objects FOR DELETE USING (bucket_id = 'session-recordings');
-CREATE POLICY "audit_evidence_read" ON storage.objects FOR SELECT USING (bucket_id = 'audit-evidence');
-CREATE POLICY "audit_evidence_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'audit-evidence');
-CREATE POLICY "audit_evidence_delete" ON storage.objects FOR DELETE USING (bucket_id = 'audit-evidence');
-CREATE POLICY "buckets_read" ON storage.buckets FOR SELECT USING (true);
+DO $$ BEGIN CREATE POLICY "session_recordings_read" ON storage.objects FOR SELECT USING (bucket_id = 'session-recordings'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "session_recordings_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'session-recordings'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "session_recordings_delete" ON storage.objects FOR DELETE USING (bucket_id = 'session-recordings'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "audit_evidence_read" ON storage.objects FOR SELECT USING (bucket_id = 'audit-evidence'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "audit_evidence_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'audit-evidence'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "audit_evidence_delete" ON storage.objects FOR DELETE USING (bucket_id = 'audit-evidence'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "buckets_read" ON storage.buckets FOR SELECT USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 
 -- ═══════════════════════════════════════════════════════════════
