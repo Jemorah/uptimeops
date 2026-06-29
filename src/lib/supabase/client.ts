@@ -51,15 +51,17 @@ function deleteCookie(name: string) {
 
 const COOKIE_KEY = 'sb-session';
 
+// Supabase calls storage with key = storageKey ('sb-session').
+// Must handle 'sb-session' directly, not just 'sb-session-auth-token'.
 const cookieStorage: Storage = {
   get length() { return getCookie(COOKIE_KEY) ? 1 : 0; },
   key() { return COOKIE_KEY; },
   getItem(key: string): string | null {
-    if (key.includes('auth-token')) return getCookie(COOKIE_KEY);
+    if (key.includes('auth-token') || key === COOKIE_KEY) return getCookie(COOKIE_KEY);
     return getCookie(key) || null;
   },
   setItem(key: string, value: string): void {
-    if (key.includes('auth-token')) {
+    if (key.includes('auth-token') || key === COOKIE_KEY) {
       try {
         const parsed = JSON.parse(value);
         const expiresAt = parsed?.expires_at;
@@ -71,7 +73,7 @@ const cookieStorage: Storage = {
     }
   },
   removeItem(key: string): void {
-    if (key.includes('auth-token')) deleteCookie(COOKIE_KEY);
+    if (key.includes('auth-token') || key === COOKIE_KEY) deleteCookie(COOKIE_KEY);
   },
   clear(): void {
     deleteCookie(COOKIE_KEY);

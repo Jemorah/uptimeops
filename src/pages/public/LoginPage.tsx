@@ -63,7 +63,9 @@ export function LoginPage() {
           }
         } else if (returnedRole && returnedRole !== 'public') {
           toast.success(`Signed in — ${returnedRole} access`);
+          setIsLoading(false); // Clear loading BEFORE navigate to prevent re-render after unmount
           goToDestination(returnedRole);
+          return; // Exit early — navigate will unmount this component
         }
       } else {
         // Sign up mode
@@ -78,7 +80,9 @@ export function LoginPage() {
           toast.error(signUpError.message);
         } else if (returnedRole && returnedRole !== 'public') {
           toast.success(`Account created — ${returnedRole} access`);
+          setIsLoading(false);
           goToDestination(returnedRole);
+          return;
         } else {
           toast.success('Account created! Check your email for confirmation.');
           setMode('signin');
@@ -112,7 +116,9 @@ export function LoginPage() {
         toast.error(signInError.message);
       } else if (returnedRole && returnedRole !== 'public') {
         toast.success(`Admin account created — ${returnedRole} access granted`);
+        setIsLoading(false);
         goToDestination(returnedRole);
+        return;
       }
     } catch (err: any) {
       setError(err.message || 'Admin setup failed');

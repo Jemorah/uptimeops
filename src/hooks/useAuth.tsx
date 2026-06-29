@@ -104,13 +104,12 @@ export function getPostLoginDestination(role: UserRole, fallbackRedirect?: strin
   return '/';
 }
 
-// ── Legacy redirect function (used by AuthCallbackPage) ──
+// ── Redirect after login ──
 export function redirectToRoleSubdomain(role: UserRole, fallbackRedirect?: string | null) {
   const dest = getPostLoginDestination(role, fallbackRedirect);
   if (!isSubdomainMode()) {
-    // Single-domain: client-side hash-based navigation
-    window.location.hash = dest;
-    window.location.reload();
+    // Single-domain: client-side hash navigation (no reload — state is in cookie)
+    window.location.hash = '#' + dest;
   } else {
     // Subdomain mode: full page redirect
     window.location.href = dest;
