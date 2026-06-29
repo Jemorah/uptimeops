@@ -115,7 +115,7 @@ export function getCurrentPortal(): 'www' | 'app' | 'dashboard' | 'engineers' {
   if (host.startsWith('engineers.')) return 'engineers';
   const hash = window.location.hash;
   if (hash.startsWith('#/customer')) return 'app';
-  if (hash.startsWith('#/hq')) return 'hq' as 'dashboard';
+  if (hash.startsWith('#/hq')) return 'dashboard';
   if (hash.startsWith('#/engineer')) return 'engineers';
   return 'www';
 }

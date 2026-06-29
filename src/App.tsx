@@ -49,7 +49,11 @@ function PortalGate({ portal, children }: { portal: string; children: React.Reac
 }
 
 function AppInner() {
-  const portal = getCurrentPortal();
+  const rawPortal = getCurrentPortal();
+  // Safety: only allow known portal values
+  const portal = ['app', 'dashboard', 'engineers', 'www'].includes(rawPortal)
+    ? rawPortal as 'www' | 'app' | 'dashboard' | 'engineers'
+    : 'www';
   console.log('[App] Current portal:', portal, 'hash:', window.location.hash);
   return (
     <PortalGate portal={portal}>
