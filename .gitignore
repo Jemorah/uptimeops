@@ -45,3 +45,4 @@ coverage
 supabase_backup_*
 .vercel
 *.png
+package-lock.json
