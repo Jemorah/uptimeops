@@ -125,33 +125,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     async function init() {
+      console.log('[Auth] init() — calling getSession()...');
       const { data: { session } } = await supabase.auth.getSession();
+      console.log('[Auth] getSession result:', { hasSession: !!session, email: session?.user?.email || null });
       if (!mounted) return;
       if (session?.user) {
         if (isAdminEmail(session.user.email)) {
+          console.log('[Auth] Admin override applied for:', session.user.email);
           setState({ user: session.user, role: 'admin', isLoading: false, isAuthenticated: true });
           return;
         }
         let role = await getUserRole(session.user.id);
         role = applyAdminOverride(session.user, role);
+        console.log('[Auth] Session found, role:', role);
         setState({ user: session.user, role, isLoading: false, isAuthenticated: true });
       } else {
+        console.log('[Auth] No session found');
         setState(s => ({ ...s, isLoading: false }));
       }
     }
     init();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[Auth] onAuthStateChange:', event, 'hasUser:', !!session?.user, 'email:', session?.user?.email || null);
       if (!mounted) return;
       const user = session?.user ?? null;
       if (user) {
         if (isAdminEmail(user.email)) {
+          console.log('[Auth] onAuthStateChange — admin override');
           setState({ user, role: 'admin', isLoading: false, isAuthenticated: true });
           return;
         }
         let role = await getUserRole(user.id);
         role = applyAdminOverride(user, role);
+        console.log('[Auth] onAuthStateChange — role:', role);
         setState({ user, role, isLoading: false, isAuthenticated: true });
       } else {
+        console.log('[Auth] onAuthStateChange — signed out');
         setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
       }
     });
@@ -159,29 +168,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    console.log('[Auth] signIn() — email:', email);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
+        console.log('[Auth] signIn error:', error.message);
         let friendly = error.message;
         if (error.message.includes('Invalid login credentials')) friendly = 'Invalid email or password.';
         else if (error.message.includes('Email not confirmed')) friendly = 'Please confirm your email before signing in.';
         return { error: { ...error, message: friendly } as AuthError };
       }
       if (!data.session?.user) {
+        console.log('[Auth] signIn — no session');
         return { error: { message: 'No session.', name: 'AuthError', status: 400 } as AuthError };
       }
 
       // Admin email bypass
       if (isAdminEmail(data.session.user.email)) {
+        console.log('[Auth] signIn — admin override');
         setState({ user: data.session.user, role: 'admin', isLoading: false, isAuthenticated: true });
         return { error: null, role: 'admin' as UserRole };
       }
 
       let role = await getUserRole(data.session.user.id);
       role = applyAdminOverride(data.session.user, role);
+      console.log('[Auth] signIn — success, role:', role);
       setState({ user: data.session.user, role, isLoading: false, isAuthenticated: true });
       return { error: null, role };
     } catch (err: any) {
+      console.log('[Auth] signIn exception:', err?.message);
       return { error: { message: err?.message || 'Error.', name: 'AuthError', status: 500 } as AuthError };
     }
   }, []);

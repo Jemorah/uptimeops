@@ -5,7 +5,8 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect } from 'react';
-import { AuthProvider, useAuth, getLoginUrl } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { getCurrentPortal } from '@/lib/supabase/client';
 import { MarketingRouter } from '@/routers/MarketingRouter';
 import { CustomerRouter } from '@/routers/CustomerRouter';
@@ -14,6 +15,7 @@ import { EngineerRouter } from '@/routers/EngineerRouter';
 import { Loader2, Zap } from 'lucide-react';
 
 function PortalGate({ portal, children }: { portal: string; children: React.ReactNode }) {
+  const navigate = useNavigate();
   const { isAuthenticated, isLoading, role } = useAuth();
 
   useEffect(() => {
@@ -22,9 +24,11 @@ function PortalGate({ portal, children }: { portal: string; children: React.Reac
     // Admin can access all portals — no redirect needed
     if (role === 'admin') return;
     if (!isAuthenticated) {
-      window.location.href = getLoginUrl(window.location.href);
+      console.log('[PortalGate] Not authenticated on portal:', portal, '→ redirecting to /login');
+      const currentPath = window.location.hash.replace(/^#/, '');
+      navigate('/login?redirect_to=' + encodeURIComponent(currentPath), { replace: true });
     }
-  }, [portal, isAuthenticated, isLoading, role]);
+  }, [portal, isAuthenticated, isLoading, role, navigate]);
 
   if (portal !== 'www' && isLoading) {
     return (
@@ -46,6 +50,7 @@ function PortalGate({ portal, children }: { portal: string; children: React.Reac
 
 function AppInner() {
   const portal = getCurrentPortal();
+  console.log('[App] Current portal:', portal, 'hash:', window.location.hash);
   return (
     <PortalGate portal={portal}>
       {portal === 'app' && <CustomerRouter />}

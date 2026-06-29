@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
-// PROTECTED ROUTE — Multi-Subdomain
-// Guards by auth + role. Admin (cumouat@gmail.com) can access all portals.
-// Unauthenticated → redirect to www login.
-// Wrong role → show access denied (admin never hits this).
+// PROTECTED ROUTE — Guards by auth + role.
+// Admin (cumouat@gmail.com) can access all portals.
+// Unauthenticated → navigate to /login (NOT window.location.href reload).
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useRef, useState } from 'react';
-import { useAuth, getLoginUrl, redirectToRoleSubdomain } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@/lib/supabase/client';
 import { Loader2, Zap, ShieldAlert } from 'lucide-react';
 
@@ -15,9 +15,10 @@ interface Props {
   allowedRoles?: UserRole[];
 }
 
-const AUTH_SETTLE_MS = 100;
+const AUTH_SETTLE_MS = 200;
 
 export function ProtectedRoute({ children, allowedRoles }: Props) {
+  const navigate = useNavigate();
   const { isAuthenticated, isLoading, user, role } = useAuth();
   const [settling, setSettling] = useState(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,9 +32,10 @@ export function ProtectedRoute({ children, allowedRoles }: Props) {
   useEffect(() => {
     if (settling) return;
     if (!isAuthenticated) {
-      window.location.href = getLoginUrl(typeof window !== 'undefined' ? window.location.href : '');
+      console.log('[ProtectedRoute] Not authenticated, redirecting to /login');
+      navigate('/login?redirect_to=' + encodeURIComponent(window.location.hash.replace(/^#/, '')), { replace: true });
     }
-  }, [settling, isAuthenticated]);
+  }, [settling, isAuthenticated, navigate]);
 
   if (isLoading || settling) {
     return (
@@ -52,7 +54,7 @@ export function ProtectedRoute({ children, allowedRoles }: Props) {
 
   if (!isAuthenticated) return null;
 
-  // Admin (cumouat@gmail.com) can access all portals
+  // Admin can access all portals
   if (allowedRoles && role && role !== 'admin' && !allowedRoles.includes(role)) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
@@ -61,8 +63,12 @@ export function ProtectedRoute({ children, allowedRoles }: Props) {
           <h2 className="text-lg font-bold text-white">Access Denied</h2>
           <p className="text-sm text-white/50">Your account ({user?.email}) does not have permission for this portal.</p>
           <p className="text-xs text-white/30">Role: {role}</p>
-          <button onClick={() => { if (role && role !== 'public') redirectToRoleSubdomain(role, null); }}
-            className="text-xs text-[#a3e635] hover:underline">Go to my portal</button>
+          <button
+            onClick={() => { navigate('/'); }}
+            className="text-xs text-[#a3e635] hover:underline"
+          >
+            Go to home
+          </button>
         </div>
       </div>
     );
