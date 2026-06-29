@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CONTEXT — UptimeOps
-// One global entry point for login. Redirects based on role after auth.
+// Single source of truth for auth state. Syncs with Supabase.
 // Admin (cumouat@gmail.com) gets admin role on all portals.
 // ═══════════════════════════════════════════════════════════════
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { User, AuthError } from '@supabase/supabase-js';
-import { supabase, getPortalPathForRole, isAdminEmail } from '@/lib/supabase/client';
+import { supabase, isAdminEmail } from '@/lib/supabase/client';
 import type { UserRole } from '@/lib/supabase/client';
 
 // ── Types ──
@@ -23,6 +23,13 @@ interface AuthContextType extends AuthState {
   signInWithOAuth: (provider: 'google' | 'github') => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<{ error: AuthError | null }>;
+}
+
+// ── Resolve role for a user (used everywhere) ──
+function resolveRole(user: User | null): UserRole {
+  if (!user) return 'public';
+  if (isAdminEmail(user.email)) return 'admin';
+  return 'customer'; // Default for all non-admin users
 }
 
 // ── Context ──
@@ -44,115 +51,129 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
   });
 
-  // ── Initialize: check for existing session ──
+  // ── Initialize: check for existing session on mount ──
   useEffect(() => {
-    let cancelled = false;
+    let mounted = true;
 
     async function init() {
-      console.log('[Auth] init() — checking session...');
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (cancelled) return;
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (!mounted) return;
 
-      if (error) {
-        console.error('[Auth] getSession error:', error.message);
-        setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
-        return;
-      }
+        if (error) {
+          console.error('[Auth] getSession error:', error.message);
+          setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+          return;
+        }
 
-      if (session?.user) {
-        const user = session.user;
-        const role = resolveRole(user);
-        console.log('[Auth] Session restored:', user.email, 'role:', role);
-        setState({ user, role, isLoading: false, isAuthenticated: true });
-      } else {
-        console.log('[Auth] No existing session');
-        setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+        if (session?.user) {
+          const role = resolveRole(session.user);
+          console.log('[Auth] Session restored:', session.user.email, 'role:', role);
+          setState({ user: session.user, role, isLoading: false, isAuthenticated: true });
+        } else {
+          console.log('[Auth] No session');
+          setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+        }
+      } catch (err: any) {
+        console.error('[Auth] init exception:', err?.message);
+        if (mounted) {
+          setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+        }
       }
     }
 
     init();
 
     // Listen for auth state changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (cancelled) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
       const user = session?.user ?? null;
-      if (user) {
-        const role = resolveRole(user);
-        console.log('[Auth] State change:', _event, user.email, 'role:', role);
-        setState({ user, role, isLoading: false, isAuthenticated: true });
-      } else {
-        console.log('[Auth] State change: signed out');
-        setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
-      }
+      const role = resolveRole(user);
+      console.log('[Auth] onAuthStateChange:', event, 'email:', user?.email, 'role:', role);
+      setState({ user, role, isLoading: false, isAuthenticated: !!user });
     });
 
-    return () => { cancelled = true; subscription.unsubscribe(); };
+    return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
   // ── Sign In (email/password) ──
+  // State update is handled by onAuthStateChange — we just return the result
   const signIn = useCallback(async (email: string, password: string) => {
     console.log('[Auth] signIn:', email);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      const msg = error.message.includes('Invalid login credentials')
-        ? 'Invalid email or password.'
-        : error.message;
-      return { error: { ...error, message: msg } as AuthError };
+      if (error) {
+        const msg = error.message.includes('Invalid login credentials')
+          ? 'Invalid email or password.'
+          : error.message;
+        return { error: { ...error, message: msg } as AuthError };
+      }
+
+      if (!data.session?.user) {
+        return { error: { message: 'No session created.', name: 'AuthError', status: 400 } as AuthError };
+      }
+
+      const role = resolveRole(data.session.user);
+      console.log('[Auth] Signed in:', data.session.user.email, 'role:', role);
+      // onAuthStateChange will update state — don't double-set here
+      return { error: null, role };
+    } catch (err: any) {
+      console.error('[Auth] signIn exception:', err?.message);
+      return { error: { message: err?.message || 'Sign in failed.', name: 'AuthError', status: 500 } as AuthError };
     }
-
-    if (!data.session?.user) {
-      return { error: { message: 'No session created.', name: 'AuthError', status: 400 } as AuthError };
-    }
-
-    const role = resolveRole(data.session.user);
-    console.log('[Auth] Signed in:', data.session.user.email, 'role:', role);
-    // State update is handled by onAuthStateChange, but we also set it here for immediate availability
-    setState({ user: data.session.user, role, isLoading: false, isAuthenticated: true });
-    return { error: null, role };
   }, []);
 
   // ── Sign Up ──
   const signUp = useCallback(async (email: string, password: string, metadata?: { full_name?: string }) => {
     console.log('[Auth] signUp:', email);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: metadata, emailRedirectTo: `${window.location.origin}/#/login` },
-    });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: metadata, emailRedirectTo: `${window.location.origin}/#/login` },
+      });
 
-    if (error) return { error };
+      if (error) return { error };
 
-    if (data.session?.user) {
-      const role = resolveRole(data.session.user);
-      setState({ user: data.session.user, role, isLoading: false, isAuthenticated: true });
-      return { error: null, role };
+      if (data.session?.user) {
+        const role = resolveRole(data.session.user);
+        return { error: null, role };
+      }
+
+      return { error: null }; // Email confirmation required
+    } catch (err: any) {
+      console.error('[Auth] signUp exception:', err?.message);
+      return { error: { message: err?.message || 'Sign up failed.', name: 'AuthError', status: 500 } as AuthError };
     }
-
-    return { error: null }; // Email confirmation required
   }, []);
 
   // ── Sign In with OAuth ──
   const signInWithOAuth = useCallback(async (provider: 'google' | 'github') => {
     console.log('[Auth] OAuth:', provider);
-    const redirectTo = `${window.location.origin}/#/auth/callback`;
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo },
-    });
+    try {
+      const redirectTo = `${window.location.origin}/#/auth/callback`;
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo },
+      });
 
-    if (error) {
-      const msg = error.message?.includes('provider is not enabled')
-        ? `${provider} login is not enabled.`
-        : error.message;
-      return { error: { ...error, message: msg } as AuthError };
+      if (error) {
+        const msg = error.message?.includes('provider is not enabled')
+          ? `${provider} login is not enabled in Supabase.`
+          : error.message;
+        return { error: { ...error, message: msg } as AuthError };
+      }
+
+      if (data?.url) {
+        window.location.href = data.url;
+      }
+
+      return { error: null };
+    } catch (err: any) {
+      console.error('[Auth] OAuth exception:', err?.message);
+      return { error: { message: err?.message || 'OAuth failed.', name: 'AuthError', status: 500 } as AuthError };
     }
-
-    if (data?.url) {
-      window.location.href = data.url; // Redirect to OAuth provider
-    }
-
-    return { error: null };
   }, []);
 
   // ── Sign Out ──
@@ -160,14 +181,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[Auth] signOut');
     await supabase.auth.signOut();
     setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
-    window.location.href = '/#/login';
   }, []);
 
+  // ── Password Reset ──
   const sendPasswordReset = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/#/reset-password`,
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/#/reset-password`,
+      });
+      return { error };
+    } catch (err: any) {
+      return { error: { message: err?.message, name: 'AuthError', status: 500 } as AuthError };
+    }
   }, []);
 
   return (
@@ -177,20 +202,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── Resolve role for a user ──
-function resolveRole(user: User): UserRole {
-  if (isAdminEmail(user.email)) return 'admin';
-  // For non-admin users, we could query the database here
-  // But for now, default to customer if no role is set
-  return 'customer';
-}
-
 // ── Hook ──
 export function useAuth() {
   return useContext(AuthContext);
-}
-
-// ── Get destination after login based on role ──
-export function getLoginRedirect(role: UserRole): string {
-  return getPortalPathForRole(role);
 }

@@ -22,66 +22,93 @@ export function HQDashboard() {
     onCall: 0, resolved24h: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
-      // Active incidents
-      const { data: incs } = await supabase
-        .from('incidents')
-        .select('*')
-        .not('status', 'in', '(resolved,closed)')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      try {
+        // Run all queries in parallel for speed
+        const [incResult, custResult, engResult] = await Promise.all([
+          supabase.from('incidents').select('*').order('created_at', { ascending: false }).limit(20),
+          supabase.from('customers').select('*').limit(100),
+          supabase.from('engineer_profiles').select('*'),
+        ]);
 
-      setIncidents(incs || []);
+        if (cancelled) return;
 
-      // Customers
-      const { data: custs } = await supabase
-        .from('customers')
-        .select('*')
-        .limit(100);
+        const incs = incResult.data || [];
+        const custs = custResult.data || [];
+        const engs = engResult.data || [];
 
-      setCustomers(custs || []);
+        // Log any errors for debugging
+        if (incResult.error) console.error('[HQDashboard] incidents error:', incResult.error.message);
+        if (custResult.error) console.error('[HQDashboard] customers error:', custResult.error.message);
+        if (engResult.error) console.error('[HQDashboard] engineers error:', engResult.error.message);
 
-      // Engineers
-      const { data: engs } = await supabase
-        .from('engineer_profiles')
-        .select('*');
+        const activeIncs = incs.filter((i: any) => i.status !== 'resolved' && i.status !== 'closed');
+        const totalMrr = custs.reduce((sum: number, c: any) => sum + (c.mrr || 0), 0);
 
-      setEngineers(engs || []);
-
-      // Stats
-      const totalMrr = (custs || []).reduce((sum, c) => sum + (c.mrr || 0), 0);
-      setStats({
-        open: (incs || []).length,
-        critical: (incs || []).filter(i => i.priority === 'P1_CRITICAL').length,
-        customers: (custs || []).length,
-        mrr: totalMrr,
-        onCall: (engs || []).filter(e => e.is_on_call).length,
-        resolved24h: (incs || []).filter(i => i.resolved_at && new Date(i.resolved_at) > new Date(Date.now() - 86400000)).length,
-      });
-
-      setLoading(false);
+        setIncidents(activeIncs);
+        setCustomers(custs);
+        setEngineers(engs);
+        setStats({
+          open: activeIncs.length,
+          critical: activeIncs.filter((i: any) => i.priority === 'P1_CRITICAL').length,
+          customers: custs.length,
+          mrr: totalMrr,
+          onCall: engs.filter((e: any) => e.is_on_call).length,
+          resolved24h: incs.filter((i: any) => i.resolved_at && new Date(i.resolved_at) > new Date(Date.now() - 86400000)).length,
+        });
+        setError(null);
+      } catch (err: any) {
+        console.error('[HQDashboard] load exception:', err?.message);
+        if (!cancelled) setError(err?.message || 'Failed to load dashboard data');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
     load();
 
+    // Real-time updates for incidents
     const channel = supabase
       .channel('hq-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => load())
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { cancelled = true; supabase.removeChannel(channel); };
   }, []);
 
-  if (loading) {
+  // Error state
+  if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-white/40 text-sm animate-pulse">Loading control center...</div>
+        <div className="text-center space-y-3">
+          <AlertTriangle className="w-8 h-8 text-red-400 mx-auto" />
+          <p className="text-sm text-red-400">{error}</p>
+          <button onClick={() => window.location.reload()} className="text-xs text-[#a3e635] hover:underline">
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-3">
+          <Zap className="w-6 h-6 text-[#a3e635] animate-pulse mx-auto" />
+          <p className="text-white/40 text-sm animate-pulse">Loading control center...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Dashboard content
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -163,11 +190,14 @@ export function HQDashboard() {
                 <div className="flex-1">
                   <div className="text-sm">{eng.name || 'Unnamed'}</div>
                   <div className="text-xs text-white/40">
-                    {eng.active_incident_count} active — {eng.total_resolved} resolved
+                    {eng.active_incident_count || 0} active — {eng.total_resolved || 0} resolved
                   </div>
                 </div>
               </div>
             ))}
+            {engineers.length === 0 && (
+              <div className="p-4 text-xs text-white/20 text-center">No engineers yet</div>
+            )}
           </div>
         </div>
 
@@ -182,6 +212,9 @@ export function HQDashboard() {
                 <div className="text-xs text-white/40">{c.plan} — ${c.mrr}/mo — {c.status}</div>
               </div>
             ))}
+            {customers.length === 0 && (
+              <div className="p-4 text-xs text-white/20 text-center">No customers yet</div>
+            )}
           </div>
         </div>
       </div>

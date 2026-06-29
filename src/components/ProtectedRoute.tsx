@@ -1,43 +1,36 @@
 // ═══════════════════════════════════════════════════════════════
-// PROTECTED ROUTE — Guards by auth + role.
-// Admin (cumouat@gmail.com) can access all portals.
-// Unauthenticated → navigate to /login (NOT window.location.href reload).
+// PROTECTED ROUTE — Simple, direct auth check.
+// No settling delays, no complex state. Just: authenticated? render. Not? redirect.
+// Admin (cumouat@gmail.com) passes all role checks automatically.
 // ═══════════════════════════════════════════════════════════════
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@/lib/supabase/client';
-import { Loader2, Zap, ShieldAlert } from 'lucide-react';
+import { Zap, Loader2, ShieldAlert } from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
   allowedRoles?: UserRole[];
 }
 
-const AUTH_SETTLE_MS = 200;
-
 export function ProtectedRoute({ children, allowedRoles }: Props) {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading, user, role } = useAuth();
-  const [settling, setSettling] = useState(true);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Redirect unauthenticated users to login
   useEffect(() => {
-    if (isLoading) { setSettling(true); return; }
-    timerRef.current = setTimeout(() => setSettling(false), AUTH_SETTLE_MS);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [isLoading]);
-
-  useEffect(() => {
-    if (settling) return;
+    if (isLoading) return; // Still checking — wait
     if (!isAuthenticated) {
-      console.log('[ProtectedRoute] Not authenticated, redirecting to /login');
-      navigate('/login?redirect_to=' + encodeURIComponent(window.location.hash.replace(/^#/, '')), { replace: true });
+      const currentPath = window.location.hash.replace(/^#/, '') || '/';
+      console.log('[ProtectedRoute] Not authenticated, redirecting to /login?redirect_to=' + currentPath);
+      navigate('/login?redirect_to=' + encodeURIComponent(currentPath), { replace: true });
     }
-  }, [settling, isAuthenticated, navigate]);
+  }, [isLoading, isAuthenticated, navigate]);
 
-  if (isLoading || settling) {
+  // Loading state — auth check in progress
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -52,21 +45,22 @@ export function ProtectedRoute({ children, allowedRoles }: Props) {
     );
   }
 
-  if (!isAuthenticated) return null;
+  // Not authenticated — redirecting (effect above handles it)
+  if (!isAuthenticated) {
+    return null;
+  }
 
-  // Admin can access all portals
-  if (allowedRoles && role && role !== 'admin' && !allowedRoles.includes(role)) {
+  // Check role permissions (admin bypasses all)
+  if (allowedRoles && role !== 'admin' && !allowedRoles.includes(role)) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center space-y-4 max-w-sm mx-auto px-4">
           <ShieldAlert className="w-10 h-10 text-red-400 mx-auto" />
           <h2 className="text-lg font-bold text-white">Access Denied</h2>
-          <p className="text-sm text-white/50">Your account ({user?.email}) does not have permission for this portal.</p>
-          <p className="text-xs text-white/30">Role: {role}</p>
-          <button
-            onClick={() => { navigate('/'); }}
-            className="text-xs text-[#a3e635] hover:underline"
-          >
+          <p className="text-sm text-white/50">
+            Your account ({user?.email}) has role <strong>{role}</strong> but this page requires: {allowedRoles.join(', ')}
+          </p>
+          <button onClick={() => navigate('/')} className="text-xs text-[#a3e635] hover:underline">
             Go to home
           </button>
         </div>
@@ -74,5 +68,6 @@ export function ProtectedRoute({ children, allowedRoles }: Props) {
     );
   }
 
+  // All checks passed — render the protected content
   return <>{children}</>;
 }
