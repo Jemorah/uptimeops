@@ -109,7 +109,7 @@ serve(async (req) => {
         headers: { Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ incident_id: incident?.id }),
       });
-    } catch (e) {;
+    } catch (e) {
     };
 
     return new Response(JSON.stringify({
@@ -120,7 +120,7 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

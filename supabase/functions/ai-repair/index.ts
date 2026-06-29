@@ -143,7 +143,7 @@ serve(async (req) => {
         allFixes.push(...output.fixes_applied);
 
       } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 10;
       }
@@ -167,7 +167,7 @@ serve(async (req) => {
     }), { headers: corsHeaders });
 
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
     logError(FUNCTION, 'Repair failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }

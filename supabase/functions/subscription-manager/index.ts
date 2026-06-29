@@ -124,7 +124,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
   } catch (err) {
-    logError(FUNCTION, \'Request failed\', err);;
+    logError(FUNCTION, 'Request failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

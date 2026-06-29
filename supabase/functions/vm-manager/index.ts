@@ -64,7 +64,7 @@ serve(async (req) => {
           // Real AWS SSM command execution would go here
           // const ssmResult = await executeViaSSM(vm.provider_vm_id, command);
           // For now, commands remain in 'running' state until updated by the runner;
-        } catch (execErr) {;
+        } catch (execErr) {
           await supabase.from('vm_commands').update({
             status: 'failed',
             output: `Execution error: ${execErr instanceof Error ? execErr.message : String(execErr)}`,
@@ -144,7 +144,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders });
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
     logError(FUNCTION, 'Request failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }

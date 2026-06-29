@@ -246,7 +246,7 @@ serve(async (req) => {
             body: JSON.stringify({ action: 'set_oncall', engineer_id: targetId, date: scheduleDate, is_on_call: onCall }),
           });
         } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
           // Continue — local schedule is already updated
         }
       }
@@ -318,7 +318,7 @@ serve(async (req) => {
     }), { headers: corsHeaders });
 
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
     logError(FUNCTION, 'Request failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }

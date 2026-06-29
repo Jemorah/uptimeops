@@ -215,6 +215,71 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- ── 8a. CREATE repair_patches TABLE ──
+CREATE TABLE IF NOT EXISTS repair_patches (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  incident_id   uuid NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  pipeline_id   text,
+  patches       text[] DEFAULT '{}',
+  status        text DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'needs_review', 'applied', 'rejected')),
+  created_at    timestamptz DEFAULT NOW(),
+  updated_at    timestamptz DEFAULT NOW(),
+  UNIQUE(incident_id, pipeline_id)
+);
+
+ALTER TABLE repair_patches ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY repair_patches_customer ON repair_patches FOR SELECT USING (EXISTS (
+    SELECT 1 FROM incidents i JOIN customers c ON i.customer_id = c.id
+    WHERE i.id = repair_patches.incident_id AND c.user_id = auth.uid()
+  ));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY repair_patches_admin ON repair_patches FOR ALL USING (
+    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ── 8b. CREATE audit_reports TABLE ──
+CREATE TABLE IF NOT EXISTS audit_reports (
+  id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  incident_id             uuid NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  report_data             jsonb DEFAULT '{}',
+  generated_at            timestamptz DEFAULT NOW(),
+  total_duration_minutes  integer,
+  total_cost              numeric(10,2),
+  root_cause              text,
+  fix_description         text,
+  compliance_certificate_id text,
+  files_modified          integer DEFAULT 0,
+  tests_passed            integer DEFAULT 0,
+  tests_failed            integer DEFAULT 0,
+  created_at              timestamptz DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_reports_incident ON audit_reports(incident_id);
+
+ALTER TABLE audit_reports ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY audit_reports_customer ON audit_reports FOR SELECT USING (EXISTS (
+    SELECT 1 FROM incidents i JOIN customers c ON i.customer_id = c.id
+    WHERE i.id = audit_reports.incident_id AND c.user_id = auth.uid()
+  ));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY audit_reports_admin ON audit_reports FOR ALL USING (
+    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('coordinator', 'admin'))
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- ── 9. CREATE opsgenie_sync TABLE ──
 CREATE TABLE IF NOT EXISTS opsgenie_sync (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),

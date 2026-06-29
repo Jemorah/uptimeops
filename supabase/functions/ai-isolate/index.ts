@@ -164,7 +164,7 @@ serve(async (req) => {
         results.push({ scanner: scannerName, confidence: output.confidence, containment: output.containment_status, findings: output.findings.length });
 
       } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
         await supabase.from('scan_results').update({ status: 'failed' }).eq('id', scan.id);
         totalConfidence += 15;
       }
@@ -191,7 +191,7 @@ serve(async (req) => {
     }), { headers: corsHeaders });
 
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
     logError(FUNCTION, 'Isolation failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }

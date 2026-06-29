@@ -397,7 +397,7 @@ serve(async (req) => {
     }), { headers: corsHeaders });
 
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
     logError(FUNCTION, 'Audit failed', err);
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),

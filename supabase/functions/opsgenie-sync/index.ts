@@ -341,7 +341,7 @@ serve(async (req) => {
     }
 
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);
+    logError(FUNCTION, 'Operation failed', err);
     const message = err instanceof Error ? err.message : 'Unknown error';
     const isConfigError = message.includes('OPSGENIE_API_KEY not configured');
     return new Response(

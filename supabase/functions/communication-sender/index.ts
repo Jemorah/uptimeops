@@ -32,7 +32,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<boo
       body: JSON.stringify({ from: 'UptimeOps <alerts@uptimeops.com>', to, subject, html: body }),
     });
     return resp.ok;
-  } catch (e) {; return false; }
+  } catch (e) { return false; }
 }
 
 async function createNotification(supabase: any, payload: CommPayload) {
@@ -102,7 +102,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ sent: true, results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
-    logError(FUNCTION, \'Request failed\', err);;
+    logError(FUNCTION, 'Request failed', err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }), { status: 500, headers: corsHeaders });
   }
 });

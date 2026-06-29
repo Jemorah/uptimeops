@@ -170,7 +170,7 @@ serve(async (req) => {
         totalConfidence += output.confidence;
         results.push({ scanner: scannerName, confidence: output.confidence, passed: output.passed, findings: output.findings.length });
 
-      } catch (scanErr) {;
+      } catch (scanErr) {
         await supabase.from('scan_results').update({
           status: 'failed',
           raw_output: scanErr instanceof Error ? scanErr.message : String(scanErr),
@@ -194,7 +194,7 @@ serve(async (req) => {
     }), { headers: corsHeaders });
 
   } catch (err) {
-    logError(FUNCTION, \'Operation failed\', err);;
+    logError(FUNCTION, 'Operation failed', err);
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
       { status: 500, headers: corsHeaders }

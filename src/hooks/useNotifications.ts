@@ -1,57 +1,137 @@
 // ═══════════════════════════════════════════════════════════════
-// NOTIFICATIONS HOOK
-// In-app notification center with real-time badges
+// NOTIFICATIONS HOOK — v2.1
+// Real Supabase notifications table. No mock data.
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useCallback } from 'react';
-import type { AppNotification } from '@/components/communication/types';
+import { useState, useCallback, useEffect } from 'react';
+import { supabase } from '@/lib/supabase/client';
 
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  { id: 'notif-1', title: 'Fix Deployed',          message: 'ESC-2049 fix has been deployed to acme-corp.com',                         type: 'success',   read: false, incidentId: 'ESC-2049', createdAt: '2024-06-25T14:48:00Z', actionUrl: '/fix/ESC-2049', actionLabel: 'Verify' },
-  { id: 'notif-2', title: 'Verification Requested', message: 'Please confirm your site is working (5 min after fix)',                    type: 'info',      read: false, incidentId: 'ESC-2049', createdAt: '2024-06-25T14:53:00Z', actionUrl: null, actionLabel: null },
-  { id: 'notif-3', title: 'Payment Confirmed',      message: '$299 received for Critical Fix — Ticket ESC-2049 created',                type: 'success',   read: true,  incidentId: 'ESC-2049', createdAt: '2024-06-25T14:30:00Z', actionUrl: '/customer/incidents', actionLabel: 'View' },
-  { id: 'notif-4', title: 'Security Alert',         message: 'SSL certificate expires in 42 days — secure.finance.co',                    type: 'warning',   read: false, incidentId: 'ESC-2046', createdAt: '2024-06-25T12:00:00Z', actionUrl: '/customer/incidents', actionLabel: 'Review' },
-  { id: 'notif-5', title: 'Monthly Report Ready',   message: 'Your June health report is available — Security score: 87/100',              type: 'info',      read: true,  incidentId: null,       createdAt: '2024-06-01T09:00:00Z', actionUrl: '/customer/billing', actionLabel: 'Download' },
-  { id: 'notif-6', title: 'Link Expiry Warning',    message: 'Your temporary dashboard access expires in 24h — Download audit report now',  type: 'warning',   read: false, incidentId: 'ESC-2031', createdAt: '2024-06-24T10:00:00Z', actionUrl: '/fix/ESC-2031', actionLabel: 'Download' },
-  { id: 'notif-7', title: 'Critical Blocker',       message: 'ESC-2048: Smoke test failure — fix delayed, senior engineer assigned',       type: 'error',     read: false, incidentId: 'ESC-2048', createdAt: '2024-06-25T13:50:00Z', actionUrl: '/engineer', actionLabel: 'Details' },
-  { id: 'notif-8', title: 'Credential Revoked',     message: 'SFTP credentials for startup.io have been purged — Zero residual access',    type: 'success',   read: true,  incidentId: null,       createdAt: '2024-06-24T18:00:00Z', actionUrl: null, actionLabel: null },
-];
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error' | 'alert';
+  read: boolean;
+  incidentId: string | null;
+  createdAt: string;
+  actionUrl: string | null;
+  actionLabel: string | null;
+  customerId: string | null;
+}
 
-export function useNotifications() {
-  const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
+interface UseNotificationsReturn {
+  notifications: AppNotification[];
+  unreadCount: number;
+  loading: boolean;
+  error: string | null;
+  isOpen: boolean;
+  setIsOpen: (v: boolean) => void;
+  markRead: (id: string) => Promise<void>;
+  markAllRead: () => Promise<void>;
+  addNotification: (notif: Omit<AppNotification, 'id' | 'createdAt'>) => Promise<void>;
+  dismiss: (id: string) => Promise<void>;
+  refresh: () => Promise<void>;
+}
+
+export function useNotifications(customerId?: string | null): UseNotificationsReturn {
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchNotifications = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let query = supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (customerId) {
+        query = query.eq('customer_id', customerId);
+      }
+
+      const { data, error: dbError } = await query;
+      if (dbError) throw dbError;
+
+      const mapped: AppNotification[] = (data || []).map((n: any) => ({
+        id: n.id,
+        title: n.metadata?.title || n.type?.charAt(0).toUpperCase() + n.type?.slice(1) || 'Notification',
+        message: n.message || '',
+        type: (n.metadata?.type as AppNotification['type']) || 'info',
+        read: n.read || false,
+        incidentId: n.entity_id || null,
+        createdAt: n.created_at,
+        actionUrl: n.metadata?.action_url || null,
+        actionLabel: n.metadata?.action_label || null,
+        customerId: n.customer_id || null,
+      }));
+
+      setNotifications(mapped);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load notifications');
+    } finally {
+      setLoading(false);
+    }
+  }, [customerId]);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const markRead = useCallback((id: string) => {
+  const markRead = useCallback(async (id: string) => {
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   }, []);
 
-  const markAllRead = useCallback(() => {
+  const markAllRead = useCallback(async () => {
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+    if (unreadIds.length === 0) return;
+    await supabase.from('notifications').update({ read: true }).in('id', unreadIds);
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  }, [notifications]);
+
+  const addNotification = useCallback(async (notif: Omit<AppNotification, 'id' | 'createdAt'>) => {
+    const { data, error } = await supabase.from('notifications').insert({
+      customer_id: notif.customerId,
+      type: notif.type,
+      message: notif.message,
+      entity_type: 'notification',
+      entity_id: notif.incidentId,
+      read: false,
+      metadata: { title: notif.title, type: notif.type, action_url: notif.actionUrl, action_label: notif.actionLabel },
+    }).select().single();
+
+    if (!error && data) {
+      const newNotif: AppNotification = {
+        ...notif,
+        id: data.id,
+        createdAt: data.created_at,
+      };
+      setNotifications(prev => [newNotif, ...prev]);
+    }
   }, []);
 
-  const addNotification = useCallback((notif: Omit<AppNotification, 'id' | 'createdAt'>) => {
-    const newNotif: AppNotification = {
-      ...notif,
-      id: `notif-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-    };
-    setNotifications(prev => [newNotif, ...prev]);
-  }, []);
-
-  const dismiss = useCallback((id: string) => {
+  const dismiss = useCallback(async (id: string) => {
+    await supabase.from('notifications').delete().eq('id', id);
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
   return {
     notifications,
     unreadCount,
+    loading,
+    error,
     isOpen,
     setIsOpen,
     markRead,
     markAllRead,
     addNotification,
     dismiss,
+    refresh: fetchNotifications,
   };
 }
