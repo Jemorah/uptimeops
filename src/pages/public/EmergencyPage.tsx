@@ -1,725 +1,1044 @@
 // ═══════════════════════════════════════════════════════════════
-// EMERGENCY PAGE — Fastest path to fix
-// 4-step wizard: Form → Credentials → Payment → Status Tracker
-// Red emergency accents. Zero-knowledge encryption. Inline payment.
+// EMERGENCY INCIDENT REPORTING PAGE — UptimeOps v2.2
+// Stage 1: Intake Form | Stage 2: Fix Tier Matrix | Stage 3: Pipeline Tracker
+// Public & unauthenticated. High-urgency cyberpunk theme.
 // ═══════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  Flame, Shield, CheckCircle, Clock, Lock, Globe, Mail,
-  Phone, FileText, CreditCard, AlertTriangle, Server, Wrench,
-  Eye, Radio, MessageSquare, X, Key,
-  ChevronRight, ChevronLeft, Activity, RefreshCw,
-  Check, Send
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { EncryptionVisualizer } from '@/components/credentials/EncryptionVisualizer';
-import { encryptCredentials } from '@/lib/crypto/encryption';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import {
+  AlertTriangle, Zap, Shield, Lock, Radio, Eye,
+  Globe, Mail, FileText, ChevronRight, Upload, X,
+  CheckCircle2, Clock, Server, Bot, Loader2,
+  ArrowRight, Wifi, Activity, ScanLine, HardHat, Crown,
+  ChevronLeft
+} from 'lucide-react';
 
-type Step = 'form' | 'credentials' | 'payment' | 'active';
-type IssueType = 'down' | 'hacked' | 'broken' | 'slow' | 'ddos' | 'other';
-type CredentialType = 'ssh' | 'wordpress' | 'panel' | 'other';
+// ═══════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════
+type SeverityLevel = 1 | 2 | 3 | 4 | 5;
+type FixTier = 'rapid' | 'critical' | 'catastrophic';
+type SubmitState = 'idle' | 'submitting' | 'success' | 'error';
 
-const ISSUE_TYPES: { key: IssueType; label: string; icon: typeof AlertTriangle; severity: string }[] = [
-  { key: 'down',    label: 'My site is completely down / white screen', icon: AlertTriangle, severity: 'P1' },
-  { key: 'hacked',  label: 'My site was hacked / showing malware warnings', icon: Shield, severity: 'P1' },
-  { key: 'broken',  label: 'Broken layout / features not working', icon: Wrench, severity: 'P2' },
-  { key: 'slow',    label: 'Slow / crashing under traffic', icon: Activity, severity: 'P2' },
-  { key: 'ddos',    label: 'DDoS attack / firewall issue', icon: Radio, severity: 'P1' },
-  { key: 'other',   label: 'Other — I\'ll describe below', icon: FileText, severity: 'P3' },
-];
+interface FormData {
+  url: string;
+  email: string;
+  severity: SeverityLevel;
+  description: string;
+  files: File[];
+}
 
-const PAYMENT_TIERS = [
-  { key: 'rapid',       name: 'RAPID',       price: 149, response: '2-hour',     desc: 'For non-critical fixes',            features: ['AI diagnosis + fix', '72h dashboard', 'Email support'], popular: false, color: 'text-cyan', border: 'border-cyan/30', bg: 'bg-cyan/5' },
-  { key: 'critical',    name: 'CRITICAL',    price: 349, response: '30-minute',  desc: 'Most popular — complex issues',     features: ['Everything in Rapid', 'Security hardening', '30-day warranty', 'Priority queue'], popular: true, color: 'text-red-400', border: 'border-red-400/30', bg: 'bg-red-400/5' },
-  { key: 'catastrophic',name: 'CATASTROPHIC',price: 799, response: '15-minute',  desc: 'P1 emergency — full response',      features: ['Everything in Critical', 'P1 priority', 'Forensic audit', 'DDoS mitigation', '90-day warranty'], popular: false, color: 'text-magenta', border: 'border-magenta/30', bg: 'bg-magenta/5' },
-];
+// ═══════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════
+const SEVERITY_LABELS: Record<SeverityLevel, { label: string; color: string; badgeClass: string }> = {
+  1: { label: 'MINOR', color: '#22d3ee', badgeClass: 'badge-cyan' },
+  2: { label: 'MODERATE', color: '#a3e635', badgeClass: 'badge-lime' },
+  3: { label: 'MAJOR', color: '#e879f9', badgeClass: 'badge-magenta' },
+  4: { label: 'CRITICAL', color: '#f43f5e', badgeClass: 'badge-rose' },
+  5: { label: 'CATASTROPHIC', color: '#f43f5e', badgeClass: 'badge-rose' },
+};
 
+const FIX_TIERS: Record<FixTier, {
+  name: string;
+  price: number;
+  sla: string;
+  description: string;
+  features: string[];
+  icon: React.ElementType;
+  borderColor: string;
+  glowColor: string;
+  dimColor: string;
+}> = {
+  rapid: {
+    name: 'RAPID FIX',
+    price: 99,
+    sla: '2-hour',
+    description: 'Autonomous AI-only repair pipeline. Best for isolated configuration issues.',
+    features: [
+      'Full 6-Agent AI pipeline',
+      '2-hour SLA response',
+      'Isolated VM execution',
+      '42-scanner security validation',
+      'Post-fix audit trail',
+    ],
+    icon: Zap,
+    borderColor: 'rgba(34,211,238,0.3)',
+    glowColor: 'rgba(34,211,238,0.15)',
+    dimColor: 'rgba(34,211,238,0.08)',
+  },
+  critical: {
+    name: 'CRITICAL FIX',
+    price: 249,
+    sla: '1-hour',
+    description: '6-Agent engine + dedicated human engineer peer review in sandboxed VM.',
+    features: [
+      'Everything in Rapid Fix',
+      'Dedicated engineer review',
+      '1-hour SLA guarantee',
+      'Sandboxed VM execution',
+      'CodeGraph deep analysis',
+      'Priority queue access',
+    ],
+    icon: Shield,
+    borderColor: 'rgba(232,121,249,0.4)',
+    glowColor: 'rgba(232,121,249,0.2)',
+    dimColor: 'rgba(232,121,249,0.12)',
+  },
+  catastrophic: {
+    name: 'CATASTROPHIC FIX',
+    price: 599,
+    sla: '30-minute',
+    description: 'Full engine + Senior Engineer + Coordinator supervision. Maximum response.',
+    features: [
+      'Everything in Critical Fix',
+      'On-call Senior Engineer',
+      'Coordinator supervision',
+      '30-minute priority SLA',
+      'Dedicated monitoring',
+      'Post-fix validation review',
+      'Forensic audit report',
+    ],
+    icon: Crown,
+    borderColor: 'rgba(244,63,94,0.4)',
+    glowColor: 'rgba(244,63,94,0.2)',
+    dimColor: 'rgba(244,63,94,0.12)',
+  },
+};
+
+// ═══════════════════════════════════════════
+// VALIDATION
+// ═══════════════════════════════════════════
+function isValidUrl(u: string): boolean {
+  try { new URL(u); return true; } catch { return false; }
+}
+function isValidEmail(e: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
+// ═══════════════════════════════════════════
+// COMPONENT
+// ═══════════════════════════════════════════
 export function EmergencyPage() {
-  const [step, setStep] = useState<Step>('form');
-  const [stepHistory, setStepHistory] = useState<Step[]>([]);
+  const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
+  const [searchParams] = useSearchParams();
 
-  // Form state
-  const [url, setUrl] = useState('');
-  const [issueType, setIssueType] = useState<IssueType | null>(null);
-  const [description, setDescription] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  // ── Form State ──
+  const [form, setForm] = useState<FormData>({
+    url: '',
+    email: '',
+    severity: 3,
+    description: '',
+    files: [],
+  });
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  // Credential state
-  const [credType, setCredType] = useState<CredentialType>('ssh');
-  const [credHost, setCredHost] = useState('');
-  const [credPort, setCredPort] = useState('22');
-  const [credUser, setCredUser] = useState('');
-  const [credPass, setCredPass] = useState('');
-  const [wpUrl, setWpUrl] = useState('');
-  const [wpUser, setWpUser] = useState('');
-  const [wpPass, setWpPass] = useState('');
-  const [panelUrl, setPanelUrl] = useState('');
-  const [panelUser, setPanelUser] = useState('');
-  const [panelPass, setPanelPass] = useState('');
-  const [understood, setUnderstood] = useState(false);
-  const [encryptState, setEncryptState] = useState<'idle' | 'encrypting' | 'locked' | 'error'>('idle');
-  const [encryptedFingerprint, setEncryptedFingerprint] = useState('');
+  // ── Wizard State ──
+  const [stage, setStage] = useState<1 | 2 | 3>(1);
+  const [selectedTier, setSelectedTier] = useState<FixTier>('critical');
+  const [submitState, setSubmitState] = useState<SubmitState>('idle');
+  const [trackingId, setTrackingId] = useState('');
 
-  // Payment state
-  const [selectedTier, setSelectedTier] = useState<string>('critical');
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('');
-  const [cardCvc, setCardCvc] = useState('');
-  const [cardZip, setCardZip] = useState('');
-  const [isPaying, setIsPaying] = useState(false);
-
-  // Active state
-  const [ticketId] = useState(`ESC-${Date.now().toString(36).toUpperCase().slice(-4)}`);
-  const [agentProgress, setAgentProgress] = useState(0);
-  const [activeAgent, setActiveAgent] = useState(0);
-  const [logs, setLogs] = useState<string[]>(['[SYSTEM] Emergency ticket created']);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{ from: 'user' | 'support'; text: string }[]>([
-    { from: 'support', text: 'Hi! I\'m your emergency coordinator. I\'ll be monitoring your fix. How can I help?' },
-  ]);
-  const [chatInput, setChatInput] = useState('');
-
-  const goTo = (s: Step) => { setStepHistory(prev => [...prev, step]); setStep(s); };
-  const goBack = () => { const prev = stepHistory.pop(); if (prev) { setStep(prev); setStepHistory([...stepHistory]); } };
-
-  // Simulate active fix progress
+  // ── Pre-fill from URL ──
   useEffect(() => {
-    if (step !== 'active') return;
-    const agentSteps = [
-      { name: 'TRIAGE', delay: 2000, log: '[TRIAGE] Classifying issue... Detected: WordPress plugin conflict' },
-      { name: 'ISOLATE', delay: 5000, log: '[ISOLATE] Isolated VM spawned. Site cloned successfully.' },
-      { name: 'REPAIR', delay: 12000, log: '[REPAIR] Patching class-checkout.php line 142... Fix applied.' },
-      { name: 'VALIDATE', delay: 18000, log: '[VALIDATE] Smoke tests: 8/8 passed. Confidence: 94%.' },
-      { name: 'DEPLOY', delay: 22000, log: '[DEPLOY] Coordinator approved. Deploying to production...' },
-      { name: 'AUDIT', delay: 28000, log: '[AUDIT] Audit trail compiled. Credentials purged. Incident closed.' },
-    ];
-    agentSteps.forEach((a, i) => {
-      setTimeout(() => {
-        setActiveAgent(i);
-        setAgentProgress(((i + 1) / 6) * 100);
-        setLogs(prev => [...prev, a.log]);
-      }, a.delay);
-    });
-  }, [step]);
-
-  const handleEncrypt = useCallback(async () => {
-    setEncryptState('encrypting');
-    try {
-      const creds = credType === 'ssh'
-        ? JSON.stringify({ type: 'ssh', host: credHost, port: credPort, user: credUser, pass: credPass })
-        : credType === 'wordpress'
-        ? JSON.stringify({ type: 'wordpress', url: wpUrl, user: wpUser, pass: wpPass })
-        : credType === 'panel'
-        ? JSON.stringify({ type: 'panel', url: panelUrl, user: panelUser, pass: panelPass })
-        : JSON.stringify({ type: 'other', note: description });
-
-      const result = await encryptCredentials(creds);
-      setEncryptedFingerprint(result.readableFingerprint);
-      setEncryptState('locked');
-      setTimeout(() => goTo('payment'), 2500);
-    } catch {
-      setEncryptState('error');
-      toast.error('Encryption failed. Please try again.');
+    const tier = searchParams.get('tier');
+    if (tier === 'rapid' || tier === 'critical' || tier === 'catastrophic') {
+      setSelectedTier(tier);
     }
-  }, [credType, credHost, credPort, credUser, credPass, wpUrl, wpUser, wpPass, panelUrl, panelUser, panelPass, description]);
+    const url = searchParams.get('url');
+    if (url) setForm(prev => ({ ...prev, url }));
+  }, [searchParams]);
 
-  const handlePay = () => {
-    setIsPaying(true);
-    setTimeout(() => {
-      setIsPaying(false);
-      goTo('active');
-      toast.success('Payment confirmed! AI is now fixing your site.');
-    }, 2500);
+  // ═══════ STAGE 1: FORM HANDLERS ═══════
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = Array.from(e.dataTransfer.files);
+    if (dropped.length) {
+      setForm(prev => ({ ...prev, files: [...prev.files, ...dropped] }));
+      toast.success(`${dropped.length} file(s) attached`);
+    }
+  }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files ? Array.from(e.target.files) : [];
+    if (selected.length) {
+      setForm(prev => ({ ...prev, files: [...prev.files, ...selected] }));
+      toast.success(`${selected.length} file(s) attached`);
+    }
   };
 
-  const sendChat = () => {
-    if (!chatInput.trim()) return;
-    setChatMessages(prev => [...prev, { from: 'user', text: chatInput.trim() }]);
-    setChatInput('');
-    // NOTE: Real chat would connect via Supabase realtime or WebSocket
-    setTimeout(() => {
-      setChatMessages(prev => [...prev, { from: 'support', text: 'Message received. A coordinator will respond shortly. For urgent issues, call our emergency line.' }]);
-    }, 1500);
+  const removeFile = (idx: number) => {
+    setForm(prev => ({ ...prev, files: prev.files.filter((_, i) => i !== idx) }));
   };
 
-  const canSubmitForm = url.trim() && issueType && email.trim();
-  const canPay = cardNumber.length >= 15 && cardExpiry.length >= 4 && cardCvc.length >= 3 && cardZip.length >= 5;
+  const canProceedToStage2 =
+    isValidUrl(form.url) &&
+    isValidEmail(form.email) &&
+    form.severity >= 1 &&
+    form.description.length >= 20;
 
-  const stepLabels: Record<Step, string> = { form: 'Describe Issue', credentials: 'Secure Access', payment: 'Choose Speed', active: 'Fix in Progress' };
+  // ═══════ STAGE 3: SUBMIT HANDLER ═══════
+  const handleSubmit = async () => {
+    setSubmitState('submitting');
+
+    try {
+      // Upload files to Supabase storage
+      const fileUrls: string[] = [];
+      if (form.files.length > 0) {
+        setUploading(true);
+        for (const file of form.files) {
+          const path = `emergency/${Date.now()}-${file.name}`;
+          const { error } = await supabase.storage
+            .from('emergency-attachments')
+            .upload(path, file, { contentType: file.type });
+          if (!error) {
+            const { data } = supabase.storage
+              .from('emergency-attachments')
+              .getPublicUrl(path);
+            fileUrls.push(data.publicUrl);
+          }
+        }
+        setUploading(false);
+      }
+
+      const tier = FIX_TIERS[selectedTier];
+      const trackId = `EMRG-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+      setTrackingId(trackId);
+
+      if (isAuthenticated && user) {
+        // Authenticated: direct-write to incidents
+        const { error: incError } = await supabase
+          .from('incidents')
+          .insert({
+            customer_id: user.id,
+            title: `Emergency: ${form.url}`,
+            website_url: form.url,
+            source_type: 'emergency_portal',
+            source_id: trackId,
+            status: 'submitted',
+            priority: form.severity >= 4 ? 'critical' : form.severity >= 3 ? 'high' : 'medium',
+          });
+
+        if (incError) throw incError;
+
+        // Create one_time_fixes record
+        await supabase.from('one_time_fixes').insert({
+          customer_id: user.id,
+          status: 'pending_payment',
+          amount_paid: tier.price,
+        });
+
+      } else {
+        // Anonymous: insert into incidents as emergency lead
+        const { error: incError } = await supabase
+          .from('incidents')
+          .insert({
+            customer_id: '00000000-0000-0000-0000-000000000000',
+            title: `Emergency Lead: ${form.url}`,
+            website_url: form.url,
+            source_type: 'emergency_lead',
+            source_id: trackId,
+            status: 'new',
+            priority: form.severity >= 4 ? 'critical' : form.severity >= 3 ? 'high' : 'medium',
+          });
+
+        if (incError) throw incError;
+        // Store lead info in a way we can retrieve it later
+        await supabase.from('one_time_fixes').insert({
+          customer_id: '00000000-0000-0000-0000-000000000000',
+          status: 'lead',
+          amount_paid: tier.price,
+        });
+      }
+
+      setSubmitState('success');
+      toast.success('Emergency report submitted successfully!');
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Submission failed';
+      toast.error(message);
+      setSubmitState('error');
+    }
+  };
+
+  // ── Render ──
+  return (
+    <div className="min-h-screen bg-void text-text-primary">
+      {/* ═══════ TOP HUD STATUS RIBBON ═══════ */}
+      <HUDRibbon />
+
+      {/* ═══════ NAV BAR ═══════ */}
+      <nav className="border-b border-surface-border bg-void-deep/90 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+          <button onClick={() => navigate('/')} className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-lime" />
+            <span className="text-sm font-black tracking-tight">UPTIME<span className="text-lime">OPS</span></span>
+          </button>
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded bg-rose-dim border border-rose/20">
+              <Radio className="w-3 h-3 text-rose animate-pulse" />
+              <span className="text-[10px] font-bold text-rose uppercase tracking-wider">Emergency Portal</span>
+            </div>
+            {isAuthenticated && (
+              <button onClick={() => navigate('/customer')} className="text-[10px] text-cyan hover:text-cyan-light font-bold uppercase tracking-wider">
+                Dashboard
+              </button>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        {/* Stage Progress */}
+        {stage !== 3 && <StageProgress stage={stage} />}
+
+        {stage === 1 && (
+          <Stage1Form
+            form={form}
+            setForm={setForm}
+            dragOver={dragOver}
+            setDragOver={setDragOver}
+            handleDrop={handleDrop}
+            handleFileSelect={handleFileSelect}
+            removeFile={removeFile}
+            canProceed={canProceedToStage2}
+            onProceed={() => setStage(2)}
+          />
+        )}
+
+        {stage === 2 && (
+          <Stage2TierSelection
+            selectedTier={selectedTier}
+            onSelect={setSelectedTier}
+            onBack={() => setStage(1)}
+            onSubmit={() => setStage(3)}
+          />
+        )}
+
+        {stage === 3 && (
+          <Stage3Submission
+            form={form}
+            selectedTier={selectedTier}
+            submitState={submitState}
+            trackingId={trackingId}
+                      uploading={uploading}
+            isAuthenticated={isAuthenticated}
+            onSubmit={handleSubmit}
+            onNavigate={navigate}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// HUD RIBBON
+// ═══════════════════════════════════════════
+function HUDRibbon() {
+  return (
+    <div className="bg-void-deep border-b border-surface-border overflow-hidden">
+      <div className="max-w-6xl mx-auto px-4 py-2">
+        <div className="flex items-center gap-6 text-[10px] font-bold uppercase tracking-widest animate-slide-left whitespace-nowrap">
+          <span className="flex items-center gap-1.5 text-cyan">
+            <Lock className="w-3 h-3" /> AES-256-GCM Vault Operational
+          </span>
+          <span className="text-surface-border">|</span>
+          <span className="flex items-center gap-1.5 text-lime">
+            <ScanLine className="w-3 h-3" /> 42/42 Security Scanners Armed
+          </span>
+          <span className="text-surface-border">|</span>
+          <span className="flex items-center gap-1.5 text-magenta">
+            <HardHat className="w-3 h-3" /> OpsGenie Duty Engineer Online
+          </span>
+          <span className="text-surface-border">|</span>
+          <span className="flex items-center gap-1.5 text-rose">
+            <Clock className="w-3 h-3" /> 15-Min Response Guaranteed
+          </span>
+          <span className="text-surface-border">|</span>
+          <span className="flex items-center gap-1.5 text-cyan">
+            <Wifi className="w-3 h-3 animate-pulse" /> Realtime Channel Active
+          </span>
+        </div>
+      </div>
+      <style>{`
+        @keyframes slideLeft {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-slide-left { animation: slideLeft 20s linear infinite; }
+      `}</style>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// STAGE PROGRESS
+// ═══════════════════════════════════════════
+function StageProgress({ stage }: { stage: 1 | 2 | 3 }) {
+  const stages = [
+    { num: 1, label: 'Report Incident' },
+    { num: 2, label: 'Select Fix Tier' },
+    { num: 3, label: 'Initialize Pipeline' },
+  ];
 
   return (
-    <div className="min-h-screen pt-20 pb-12">
+    <div className="flex items-center justify-center gap-2 mb-8">
+      {stages.map((s, i) => (
+        <div key={s.num} className="flex items-center gap-2">
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+            stage >= s.num
+              ? 'bg-rose-dim border-rose/30 text-rose'
+              : 'bg-void-light border-surface-border text-text-muted'
+          }`}>
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+              stage >= s.num ? 'bg-rose text-white' : 'bg-surface-border text-text-muted'
+            }`}>
+              {stage > s.num ? <CheckCircle2 className="w-3 h-3" /> : s.num}
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-wider hidden sm:inline">{s.label}</span>
+          </div>
+          {i < stages.length - 1 && (
+            <ArrowRight className={`w-4 h-4 ${stage > s.num ? 'text-rose' : 'text-surface-border'}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// STAGE 1: INCIDENT INTAKE FORM
+// ═══════════════════════════════════════════
+function Stage1Form({
+  form,
+  setForm,
+  dragOver,
+  setDragOver,
+  handleDrop,
+  handleFileSelect,
+  removeFile,
+  canProceed,
+  onProceed,
+}: {
+  form: FormData;
+  setForm: React.Dispatch<React.SetStateAction<FormData>>;
+  dragOver: boolean;
+  setDragOver: (v: boolean) => void;
+  handleDrop: (e: React.DragEvent) => void;
+  handleFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  removeFile: (idx: number) => void;
+  canProceed: boolean;
+  onProceed: () => void;
+}) {
+  const sev = SEVERITY_LABELS[form.severity];
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="border-b border-red-400/10 bg-red-400/[0.02]">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-red-400/10 border border-red-400/20 flex items-center justify-center animate-pulse">
-                <Radio className="w-4 h-4 text-red-400" />
-              </div>
-              <div>
-                <h1 className="text-sm font-black tracking-tight text-red-400 uppercase">Emergency Website Repair — Live</h1>
-                <p className="text-[10px] text-white/30 font-mono">AI fix: ~18 min | Human escalation: &lt;5 min</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-[10px] text-white/30 font-mono">AI ONLINE — {new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })} UTC</span>
-            </div>
-          </div>
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-dim border border-rose/20 mb-4">
+          <AlertTriangle className="w-3.5 h-3.5 text-rose animate-pulse" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-rose">Active Emergency Reporting</span>
         </div>
+        <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-text-primary">
+          Report Your <span className="text-rose">Incident</span>
+        </h1>
+        <p className="text-sm text-text-secondary mt-2">
+          Our 6-Agent AI pipeline will begin remediation immediately upon submission.
+        </p>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 mt-8">
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2">
-            {/* Stepper */}
-            {step !== 'active' && (
-              <div className="flex items-center gap-0 mb-8">
-                {(['form', 'credentials', 'payment'] as const).map((s, i) => (
-                  <div key={s} className="flex items-center flex-1">
-                    <div className={`flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-wider border transition-all ${
-                      step === s ? 'bg-red-400/10 border-red-400/30 text-red-400' :
-                      stepHistory.includes(s) ? 'bg-lime/5 border-lime/20 text-lime' :
-                      'bg-white/5 border-white/5 text-white/20'
-                    }`}>
-                      <span className="font-mono">0{i + 1}</span>
-                      {stepLabels[s]}
-                      {stepHistory.includes(s) && <Check className="w-3 h-3" />}
-                    </div>
-                    {i < 2 && <ChevronRight className="w-4 h-4 text-white/10 mx-1" />}
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* Form Card */}
+      <div className="glass-surface rounded-xl p-6 sm:p-8 space-y-6"
+        style={{ borderColor: 'rgba(244,63,94,0.15)' }}
+      >
+        {/* Affected URL */}
+        <div>
+          <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
+            <Globe className="w-3.5 h-3.5 text-cyan" /> Affected Infrastructure URL
+          </label>
+          <input
+            type="url"
+            value={form.url}
+            onChange={e => setForm(prev => ({ ...prev, url: e.target.value }))}
+            placeholder="https://yoursite.com"
+            className={`w-full bg-void-light border rounded-lg px-4 py-3 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none transition-colors ${
+              form.url && !isValidUrl(form.url) ? 'border-rose' : 'border-surface-border focus:border-cyan'
+            }`}
+          />
+          {form.url && !isValidUrl(form.url) && (
+            <p className="text-[11px] text-rose mt-1">Please enter a valid URL including https://</p>
+          )}
+        </div>
 
-            {/* ── STEP 1: FORM ── */}
-            {step === 'form' && (
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-xl font-black tracking-tight mb-1">What happened?</h2>
-                  <p className="text-xs text-white/30">The more detail you provide, the faster our AI can diagnose.</p>
-                </div>
+        {/* Contact Email */}
+        <div>
+          <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
+            <Mail className="w-3.5 h-3.5 text-cyan" /> Contact Email
+          </label>
+          <input
+            type="email"
+            value={form.email}
+            onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
+            placeholder="you@company.com"
+            className={`w-full bg-void-light border rounded-lg px-4 py-3 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none transition-colors ${
+              form.email && !isValidEmail(form.email) ? 'border-rose' : 'border-surface-border focus:border-cyan'
+            }`}
+          />
+          {form.email && !isValidEmail(form.email) && (
+            <p className="text-[11px] text-rose mt-1">Please enter a valid email address</p>
+          )}
+        </div>
 
-                {/* Website URL */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <label className="text-[10px] text-white/30 uppercase tracking-wider font-bold mb-2 block">Your Website URL *</label>
-                  <div className="relative">
-                    <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                    <Input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://your-site.com" className="pl-10 bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" required />
-                  </div>
-                </div>
-
-                {/* Issue Type */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <label className="text-[10px] text-white/30 uppercase tracking-wider font-bold mb-3 block">What happened? *</label>
-                  <div className="space-y-2">
-                    {ISSUE_TYPES.map(it => (
-                      <button
-                        key={it.key}
-                        onClick={() => setIssueType(it.key)}
-                        className={`w-full flex items-center gap-3 p-3 border text-left transition-all ${
-                          issueType === it.key
-                            ? 'bg-red-400/5 border-red-400/30'
-                            : 'bg-transparent border-white/5 hover:border-white/15'
-                        }`}
-                      >
-                        <div className={`w-4 h-4 border flex-shrink-0 flex items-center justify-center ${
-                          issueType === it.key ? 'border-red-400 bg-red-400/20' : 'border-white/20'
-                        }`}>
-                          {issueType === it.key && <div className="w-2 h-2 bg-red-400" />}
-                        </div>
-                        <it.icon className={`w-4 h-4 flex-shrink-0 ${issueType === it.key ? 'text-red-400' : 'text-white/20'}`} />
-                        <span className={`text-xs ${issueType === it.key ? 'text-white' : 'text-white/40'}`}>{it.label}</span>
-                        <span className={`ml-auto text-[9px] font-mono font-bold px-1.5 py-0.5 border ${
-                          it.severity === 'P1' ? 'bg-red-400/10 text-red-400 border-red-400/20' :
-                          it.severity === 'P2' ? 'bg-orange-400/10 text-orange-400 border-orange-400/20' :
-                          'bg-white/5 text-white/30 border-white/10'
-                        }`}>{it.severity}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Description */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <label className="text-[10px] text-white/30 uppercase tracking-wider font-bold mb-2 block">Describe what you see (optional)</label>
-                  <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Error messages, when it started, what you've tried..." rows={3} className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30 resize-none" />
-                </div>
-
-                {/* Contact */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <label className="text-[10px] text-white/30 uppercase tracking-wider font-bold mb-2 block">Your Email *</label>
-                  <div className="relative mb-4">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" className="pl-10 bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                  </div>
-                  <label className="text-[10px] text-white/30 uppercase tracking-wider font-bold mb-2 block">Your Phone (optional, for SMS)</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                    <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1-555-0199" className="pl-10 bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center justify-between">
-                  <Link to="/" className="text-xs text-white/30 hover:text-white/60 transition-colors flex items-center gap-1">
-                    <ChevronLeft className="w-3 h-3" /> Back to home
-                  </Link>
-                  <Button
-                    onClick={() => canSubmitForm ? goTo('credentials') : toast.error('Please fill required fields')}
-                    className="bg-red-400 hover:bg-red-400/90 text-void font-black uppercase tracking-wider px-8 py-5 text-sm"
-                  >
-                    Continue to Secure Access
-                    <ChevronRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 2: CREDENTIALS ── */}
-            {step === 'credentials' && (
-              <div className="space-y-6">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <Lock className="w-5 h-5 text-red-400" />
-                    <h2 className="text-xl font-black tracking-tight">Secure Credential Access</h2>
-                  </div>
-                  <p className="text-xs text-white/30">To fix your site, we need temporary access. Everything is encrypted in your browser before it leaves your device.</p>
-                </div>
-
-                {/* Encryption visual */}
-                <EncryptionVisualizer state={encryptState} fingerprint={encryptedFingerprint} />
-
-                {encryptState === 'idle' && (
-                  <>
-                    {/* Credential Type Tabs */}
-                    <div className="flex border-b border-white/5">
-                      {([
-                        { key: 'ssh', label: 'SSH/FTP', icon: Key },
-                        { key: 'wordpress', label: 'WordPress', icon: FileText },
-                        { key: 'panel', label: 'Hosting Panel', icon: Server },
-                      ] as const).map(tab => (
-                        <button
-                          key={tab.key}
-                          onClick={() => setCredType(tab.key)}
-                          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase border-b-2 transition-colors ${
-                            credType === tab.key ? 'border-red-400 text-red-400' : 'border-transparent text-white/30 hover:text-white/50'
-                          }`}
-                        >
-                          <tab.icon className="w-3.5 h-3.5" />
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* SSH/FTP Form */}
-                    {credType === 'ssh' && (
-                      <div className="bg-surface border border-white/5 p-5 space-y-4">
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="col-span-2">
-                            <label className="text-[10px] text-white/30 uppercase mb-1 block">Host</label>
-                            <Input value={credHost} onChange={e => setCredHost(e.target.value)} placeholder="sftp.your-site.com" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-white/30 uppercase mb-1 block">Port</label>
-                            <Input value={credPort} onChange={e => setCredPort(e.target.value)} placeholder="22" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-white/30 uppercase mb-1 block">Username</label>
-                          <Input value={credUser} onChange={e => setCredUser(e.target.value)} placeholder="root or ftp-user" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-white/30 uppercase mb-1 block">Password / Private Key</label>
-                          <Input type="password" value={credPass} onChange={e => setCredPass(e.target.value)} placeholder="••••••••••••" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* WordPress Form */}
-                    {credType === 'wordpress' && (
-                      <div className="bg-surface border border-white/5 p-5 space-y-4">
-                        <div>
-                          <label className="text-[10px] text-white/30 uppercase mb-1 block">WordPress Admin URL</label>
-                          <Input value={wpUrl} onChange={e => setWpUrl(e.target.value)} placeholder="https://your-site.com/wp-admin" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[10px] text-white/30 uppercase mb-1 block">Username</label>
-                            <Input value={wpUser} onChange={e => setWpUser(e.target.value)} placeholder="admin" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-white/30 uppercase mb-1 block">Password</label>
-                            <Input type="password" value={wpPass} onChange={e => setWpPass(e.target.value)} placeholder="••••••••" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Hosting Panel Form */}
-                    {credType === 'panel' && (
-                      <div className="bg-surface border border-white/5 p-5 space-y-4">
-                        <div>
-                          <label className="text-[10px] text-white/30 uppercase mb-1 block">Panel URL</label>
-                          <Input value={panelUrl} onChange={e => setPanelUrl(e.target.value)} placeholder="https://cpanel.your-host.com" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[10px] text-white/30 uppercase mb-1 block">Username</label>
-                            <Input value={panelUser} onChange={e => setPanelUser(e.target.value)} placeholder="panel-user" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-white/30 uppercase mb-1 block">Password</label>
-                            <Input type="password" value={panelPass} onChange={e => setPanelPass(e.target.value)} placeholder="••••••••" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Checkbox */}
-                    <div className="flex items-start gap-3 p-4 bg-red-400/[0.02] border border-red-400/10">
-                      <Checkbox checked={understood} onCheckedChange={c => setUnderstood(c === true)} className="mt-0.5 border-white/20 data-[state=checked]:bg-red-400 data-[state=checked]:border-red-400" />
-                      <label className="text-xs text-white/40 leading-relaxed cursor-pointer" onClick={() => setUnderstood(!understood)}>
-                        I understand my credentials are <span className="text-red-400 font-bold">encrypted in my browser</span> using AES-256-GCM before transmission. They are automatically deleted after the fix is complete. I can revoke access at any time.
-                      </label>
-                    </div>
-                  </>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center justify-between">
-                  <button onClick={goBack} className="text-xs text-white/30 hover:text-white/60 transition-colors flex items-center gap-1">
-                    <ChevronLeft className="w-3 h-3" /> Back
-                  </button>
-                  {encryptState === 'idle' && (
-                    <Button
-                      onClick={() => understood ? handleEncrypt() : toast.error('Please confirm the encryption notice')}
-                      className="bg-red-400 hover:bg-red-400/90 text-void font-black uppercase tracking-wider px-8 py-5 text-sm"
-                    >
-                      <Lock className="w-4 h-4 mr-2" />
-                      Encrypt &amp; Lock
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 3: PAYMENT ── */}
-            {step === 'payment' && (
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-xl font-black tracking-tight mb-1">Choose Your Fix Speed</h2>
-                  <p className="text-xs text-white/30">Select the response tier that matches your urgency. Pay only when you confirm the fix works.</p>
-                </div>
-
-                {/* Tiers */}
-                <div className="space-y-3">
-                  {PAYMENT_TIERS.map(tier => (
-                    <button
-                      key={tier.key}
-                      onClick={() => setSelectedTier(tier.key)}
-                      className={`w-full text-left p-5 border transition-all ${
-                        selectedTier === tier.key
-                          ? `${tier.bg} ${tier.border} ring-1 ${tier.border.replace('border-', 'ring-').replace('/30', '/20')}`
-                          : 'border-white/5 hover:border-white/15 bg-surface'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className={`w-4 h-4 border flex-shrink-0 flex items-center justify-center ${selectedTier === tier.key ? `border-red-400 bg-red-400/20` : 'border-white/20'}`}>
-                              {selectedTier === tier.key && <div className="w-2 h-2 bg-red-400" />}
-                            </div>
-                            <span className={`text-sm font-black ${tier.color}`}>{tier.name}</span>
-                            {tier.popular && (
-                              <span className="text-[9px] bg-red-400/10 text-red-400 px-2 py-0.5 border border-red-400/20 font-bold uppercase">Recommended</span>
-                            )}
-                          </div>
-                          <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-3xl font-black font-mono text-white">${tier.price}</span>
-                            <span className="text-xs text-white/30">one-time</span>
-                          </div>
-                          <p className="text-xs text-white/30 mb-3">{tier.desc}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {tier.features.map(f => (
-                              <span key={f} className="text-[10px] text-white/40 flex items-center gap-1">
-                                <Check className="w-2.5 h-2.5 text-lime" />{f}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className={`px-3 py-2 border text-center ${tier.bg} ${tier.border}`}>
-                          <Clock className={`w-4 h-4 ${tier.color} mx-auto mb-1`} />
-                          <span className={`text-[10px] font-bold ${tier.color}`}>{tier.response}</span>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Card Form */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <CreditCard className="w-4 h-4 text-white/30" />
-                    <span className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Payment Details</span>
-                    <span className="text-[10px] text-white/15 ml-auto font-mono">Stripe Secure</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2">
-                      <label className="text-[10px] text-white/20 mb-1 block">Card Number</label>
-                      <Input value={cardNumber} onChange={e => setCardNumber(e.target.value.replace(/\D/g, '').slice(0, 16))} placeholder="4242 4242 4242 4242" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30 font-mono" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/20 mb-1 block">Expiry</label>
-                      <Input value={cardExpiry} onChange={e => setCardExpiry(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="MM/YY" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30 font-mono" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/20 mb-1 block">CVC</label>
-                      <Input value={cardCvc} onChange={e => setCardCvc(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="123" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30 font-mono" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="text-[10px] text-white/20 mb-1 block">ZIP Code</label>
-                      <Input value={cardZip} onChange={e => setCardZip(e.target.value.replace(/\D/g, '').slice(0, 5))} placeholder="10001" className="bg-black/30 border-white/10 text-white placeholder:text-white/15 focus:border-red-400/30 font-mono" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center justify-between">
-                  <button onClick={goBack} className="text-xs text-white/30 hover:text-white/60 transition-colors flex items-center gap-1">
-                    <ChevronLeft className="w-3 h-3" /> Back
-                  </button>
-                  <Button
-                    onClick={handlePay}
-                    disabled={!canPay || isPaying}
-                    className="bg-red-400 hover:bg-red-400/90 text-void font-black uppercase tracking-wider px-8 py-5 text-sm disabled:opacity-30"
-                  >
-                    {isPaying ? (
-                      <span className="flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        Processing...
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <Flame className="w-4 h-4" />
-                        Pay ${PAYMENT_TIERS.find(t => t.key === selectedTier)?.price} &amp; Start Fix
-                      </span>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 4: ACTIVE FIX ── */}
-            {step === 'active' && (
-              <div className="space-y-6">
-                {/* Ticket Header */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <CheckCircle className="w-4 h-4 text-lime" />
-                        <span className="text-xs font-bold text-lime uppercase">Payment Confirmed</span>
-                      </div>
-                      <h2 className="text-lg font-black tracking-tight">Fix In Progress — {ticketId}</h2>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-white/30 font-mono">{url}</div>
-                      <div className="text-[10px] text-white/20 font-mono">{email}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Pipeline Progress */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-[10px] text-white/30 uppercase tracking-wider font-bold">AI Pipeline</span>
-                    <span className="text-[10px] text-lime font-mono">{Math.round(agentProgress)}%</span>
-                  </div>
-                  <div className="h-2 bg-white/5 overflow-hidden mb-4">
-                    <div className="h-full bg-lime transition-all duration-1000" style={{ width: `${agentProgress}%` }} />
-                  </div>
-                  <div className="grid grid-cols-6 gap-1">
-                    {['TRIAGE', 'ISOLATE', 'REPAIR', 'VALIDATE', 'DEPLOY', 'AUDIT'].map((name, i) => (
-                      <div key={name} className={`text-center p-2 border ${
-                        i < activeAgent ? 'bg-lime/5 border-lime/20' :
-                        i === activeAgent ? 'bg-cyan/5 border-cyan/20' :
-                        'bg-white/[0.02] border-white/5'
-                      }`}>
-                        <div className={`text-[8px] font-bold ${
-                          i < activeAgent ? 'text-lime' :
-                          i === activeAgent ? 'text-cyan' :
-                          'text-white/15'
-                        }`}>{name}</div>
-                        {i < activeAgent && <Check className="w-3 h-3 text-lime mx-auto mt-1" />}
-                        {i === activeAgent && <div className="w-2 h-2 bg-cyan animate-pulse mx-auto mt-1" />}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Live Log */}
-                <div className="bg-surface border border-white/5 p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Activity className="w-3.5 h-3.5 text-cyan" />
-                    <span className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Live Log</span>
-                  </div>
-                  <div className="bg-black/30 border border-white/5 p-3 font-mono text-[10px] space-y-1.5 max-h-48 overflow-y-auto">
-                    {logs.map((log, i) => (
-                      <div key={i} className={`${
-                        log.includes('SYSTEM') ? 'text-white/30' :
-                        log.includes('TRIAGE') ? 'text-cyan' :
-                        log.includes('ISOLATE') ? 'text-purple-400' :
-                        log.includes('REPAIR') ? 'text-lime' :
-                        log.includes('VALIDATE') ? 'text-green-400' :
-                        log.includes('DEPLOY') ? 'text-orange-400' :
-                        log.includes('AUDIT') ? 'text-white/50' :
-                        'text-white/30'
-                      }`}>
-                        {log}
-                      </div>
-                    ))}
-                    <div className="text-cyan animate-pulse">_</div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-3">
-                  <Link to="/customer/comms" className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-lime/10 border border-lime/30 text-lime text-xs font-bold uppercase hover:bg-lime/20 transition-colors">
-                    <Eye className="w-3.5 h-3.5" />
-                    View Full Dashboard
-                  </Link>
-                  <Link to="/customer/vault" className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-white/10 text-white/40 text-xs font-bold uppercase hover:border-white/20 hover:text-white/60 transition-colors">
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Revoke Credentials
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── TRUST SIDEBAR ── */}
-          <div className="space-y-4">
-            {/* Trust Card */}
-            <div className="bg-surface border border-white/5 p-5 sticky top-24">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white/40 mb-4">Why You Can Trust Us</h3>
-              <div className="space-y-3">
-                {[
-                  { icon: Server, text: 'Isolated VM', desc: 'Your site is never touched directly. All fixes happen in a sandbox.' },
-                  { icon: Shield, text: 'Coordinator Approval', desc: 'A human reviews every fix before it goes live.' },
-                  { icon: RefreshCw, text: 'Auto-Rollback', desc: 'If anything goes wrong, we revert automatically.' },
-                  { icon: Lock, text: 'Zero-Knowledge', desc: 'We cannot see your credentials. Revoke access anytime.' },
-                  { icon: Clock, text: 'Transparent Timing', desc: 'You see every step in real-time. No black boxes.' },
-                ].map(item => (
-                  <div key={item.text} className="flex items-start gap-3">
-                    <item.icon className="w-4 h-4 text-lime flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-xs font-bold text-white/60">{item.text}</div>
-                      <div className="text-[10px] text-white/25 leading-relaxed">{item.desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Stats */}
-              <div className="mt-6 pt-4 border-t border-white/5 grid grid-cols-2 gap-3">
-                <div className="text-center">
-                  <div className="text-lg font-black font-mono text-lime">18m</div>
-                  <div className="text-[9px] text-white/20 uppercase">Avg Fix</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-black font-mono text-cyan">95%</div>
-                  <div className="text-[9px] text-white/20 uppercase">AI Success</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-black font-mono text-green-400">2,000+</div>
-                  <div className="text-[9px] text-white/20 uppercase">Sites Saved</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-black font-mono text-red-400">&lt;5m</div>
-                  <div className="text-[9px] text-white/20 uppercase">Escalation</div>
-                </div>
-              </div>
+        {/* Severity Slider */}
+        <div>
+          <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted mb-3">
+            <Activity className="w-3.5 h-3.5 text-rose" /> Severity Level
+          </label>
+          <div className="px-2">
+            <input
+              type="range"
+              min="1"
+              max="5"
+              value={form.severity}
+              onChange={e => setForm(prev => ({ ...prev, severity: parseInt(e.target.value) as SeverityLevel }))}
+              className="w-full accent-rose cursor-pointer"
+              style={{ accentColor: sev.color }}
+            />
+            <div className="flex justify-between mt-2">
+              {[1, 2, 3, 4, 5].map(level => (
+                <button
+                  key={level}
+                  onClick={() => setForm(prev => ({ ...prev, severity: level as SeverityLevel }))}
+                  className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    form.severity === level ? 'text-rose' : 'text-text-disabled'
+                  }`}
+                >
+                  {SEVERITY_LABELS[level as SeverityLevel].label}
+                </button>
+              ))}
             </div>
-
-            {/* Pricing Quick Ref */}
-            {step !== 'active' && (
-              <div className="bg-surface border border-white/5 p-5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-white/40 mb-3">Response Times</h3>
-                <div className="space-y-2">
-                  {PAYMENT_TIERS.map(t => (
-                    <div key={t.key} className={`flex items-center justify-between p-2 border ${t.border} ${t.bg}`}>
-                      <span className={`text-xs font-bold ${t.color}`}>{t.name}</span>
-                      <span className="text-xs text-white/40 font-mono">${t.price} / {t.response}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <span className={`px-3 py-1 rounded text-[11px] font-black uppercase tracking-wider ${sev.badgeClass}`}>
+              Level {form.severity}: {sev.label}
+            </span>
+            {form.severity >= 4 && (
+              <span className="flex items-center gap-1 text-[11px] text-rose font-bold animate-pulse">
+                <AlertTriangle className="w-3 h-3" /> This will trigger immediate AI response
+              </span>
             )}
           </div>
         </div>
-      </div>
 
-      {/* ── FLOATING CHAT WIDGET ── */}
-      <div className="fixed bottom-6 right-6 z-50">
-        {chatOpen ? (
-          <div className="w-80 bg-surface border border-white/10 shadow-2xl">
-            {/* Chat Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-red-400/[0.05]">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                <span className="text-xs font-bold text-white/70">Emergency Coordinator</span>
-              </div>
-              <button onClick={() => setChatOpen(false)} className="text-white/30 hover:text-white/60">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {/* Messages */}
-            <div className="h-64 overflow-y-auto p-3 space-y-3">
-              {chatMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] px-3 py-2 text-xs ${
-                    msg.from === 'user'
-                      ? 'bg-cyan/10 border border-cyan/20 text-white/70'
-                      : 'bg-white/5 border border-white/10 text-white/50'
-                  }`}>
-                    {msg.text}
+        {/* Description */}
+        <div>
+          <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
+            <FileText className="w-3.5 h-3.5 text-cyan" /> Diagnostic Description
+          </label>
+          <textarea
+            value={form.description}
+            onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
+            placeholder="Describe what happened. Error messages, when it started, recent changes... (min 20 characters)"
+            rows={4}
+            className={`w-full bg-void-light border rounded-lg px-4 py-3 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none resize-none transition-colors ${
+              form.description.length > 0 && form.description.length < 20 ? 'border-rose' : 'border-surface-border focus:border-cyan'
+            }`}
+          />
+          <div className="flex justify-between mt-1">
+            <span className={`text-[10px] ${form.description.length < 20 ? 'text-rose' : 'text-lime'} font-bold`}>
+              {form.description.length} / 20 minimum
+            </span>
+          </div>
+        </div>
+
+        {/* File Dropzone */}
+        <div>
+          <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
+            <Upload className="w-3.5 h-3.5 text-cyan" /> Attachments (Logs / Screenshots)
+          </label>
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer ${
+              dragOver
+                ? 'border-cyan bg-cyan-dim'
+                : 'border-surface-border hover:border-cyan/50 bg-void-light/50'
+            }`}
+          >
+            <Upload className="w-6 h-6 text-text-muted mx-auto mb-2" />
+            <p className="text-xs text-text-secondary">
+              Drag & drop files here, or <span className="text-cyan font-semibold">click to browse</span>
+            </p>
+            <p className="text-[10px] text-text-muted mt-1">Screenshots, logs, HAR files accepted</p>
+            <input
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+              id="file-input"
+            />
+            <label htmlFor="file-input" className="absolute inset-0 cursor-pointer" />
+          </div>
+
+          {/* File list */}
+          {form.files.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {form.files.map((file, i) => (
+                <div key={i} className="flex items-center justify-between p-2 bg-void-light rounded border border-surface-border/50">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="w-3.5 h-3.5 text-cyan shrink-0" />
+                    <span className="text-xs text-text-secondary truncate">{file.name}</span>
+                    <span className="text-[10px] text-text-muted shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
                   </div>
+                  <button onClick={() => removeFile(i)} className="text-text-muted hover:text-rose transition-colors shrink-0">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
-            {/* Input */}
-            <div className="flex items-center gap-2 p-3 border-t border-white/5">
-              <input
-                value={chatInput}
-                onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && sendChat()}
-                placeholder="Type a message..."
-                className="flex-1 bg-black/30 border border-white/10 text-xs text-white/70 px-3 py-2 outline-none focus:border-lime/30 placeholder:text-white/20"
-              />
-              <button onClick={sendChat} className="p-2 text-lime hover:text-lime/70 transition-colors">
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setChatOpen(true)}
-            className="w-14 h-14 bg-red-400 hover:bg-red-400/90 text-void flex items-center justify-center shadow-lg shadow-red-400/20 transition-all hover:scale-105"
-          >
-            <MessageSquare className="w-6 h-6" />
-          </button>
+          )}
+        </div>
+
+        {/* Proceed Button */}
+        <button
+          onClick={onProceed}
+          disabled={!canProceed}
+          className={`w-full py-4 rounded-lg text-sm font-black uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
+            canProceed
+              ? 'bg-rose text-white hover:bg-rose-light hover:shadow-[0_0_30px_rgba(244,63,94,0.4)]'
+              : 'bg-surface-solid text-text-disabled cursor-not-allowed'
+          }`}
+        >
+          Continue to Fix Selection
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        {!canProceed && (
+          <p className="text-[10px] text-text-muted text-center mt-2">
+            Fill in all required fields (valid URL, email, severity, description 20+ chars) to continue
+          </p>
         )}
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// STAGE 2: ONE-TIME FIX TIER SELECTION
+// ═══════════════════════════════════════════
+function Stage2TierSelection({
+  selectedTier,
+  onSelect,
+  onBack,
+  onSubmit,
+}: {
+  selectedTier: FixTier;
+  onSelect: (t: FixTier) => void;
+  onBack: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
+      {/* Header */}
+      <div className="text-center">
+        <button onClick={onBack} className="text-[10px] text-text-muted hover:text-text-primary font-bold uppercase tracking-wider mb-4 flex items-center gap-1 mx-auto">
+          <ChevronLeft className="w-3 h-3" /> Back to Form
+        </button>
+        <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-text-primary">
+          Select Your <span className="text-magenta">Emergency Fix</span>
+        </h2>
+        <p className="text-sm text-text-secondary mt-2">
+          One-time payment. No subscription required. AI pipeline initializes immediately.
+        </p>
+      </div>
+
+      {/* Tier Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {(Object.keys(FIX_TIERS) as FixTier[]).map(tier => {
+          const t = FIX_TIERS[tier];
+          const isSelected = selectedTier === tier;
+          return (
+            <button
+              key={tier}
+              onClick={() => onSelect(tier)}
+              className={`glass-surface rounded-xl p-6 text-left transition-all duration-300 ${
+                isSelected
+                  ? 'ring-2 ring-offset-0'
+                  : 'opacity-80 hover:opacity-100'
+              }`}
+              style={{
+                borderColor: isSelected ? t.borderColor : '#1e293b',
+                boxShadow: isSelected ? `0 0 25px ${t.glowColor}` : 'none',
+                background: isSelected ? `linear-gradient(180deg, ${t.dimColor} 0%, rgba(15,23,42,0.6) 40%)` : undefined,
+              }}
+            >
+              {/* Tier Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center border"
+                    style={{ borderColor: t.borderColor, background: t.dimColor }}
+                  >
+                    <t.icon className="w-5 h-5" style={{ color: tier === 'rapid' ? '#22d3ee' : tier === 'critical' ? '#e879f9' : '#f43f5e' }} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider" style={{ color: tier === 'rapid' ? '#22d3ee' : tier === 'critical' ? '#e879f9' : '#f43f5e' }}>
+                      {t.name}
+                    </div>
+                    <div className="text-[10px] text-text-muted">{t.sla} SLA</div>
+                  </div>
+                </div>
+                {isSelected && <CheckCircle2 className="w-5 h-5 text-lime" />}
+              </div>
+
+              {/* Price */}
+              <div className="mb-4">
+                <span className="text-3xl font-black text-text-primary">${t.price}</span>
+                <span className="text-sm text-text-muted ml-1">one-time</span>
+              </div>
+
+              <p className="text-xs text-text-secondary mb-4 leading-relaxed">{t.description}</p>
+
+              {/* Features */}
+              <ul className="space-y-2">
+                {t.features.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-text-secondary">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-lime shrink-0 mt-0.5" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Submit CTA */}
+      <div className="text-center">
+        <button
+          onClick={onSubmit}
+          className="group relative inline-flex items-center gap-3 px-10 py-5 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all duration-300 hover:shadow-[0_0_40px_rgba(244,63,94,0.5)] animate-pulse-slow"
+          style={{
+            background: 'linear-gradient(135deg, #f43f5e, #e879f9)',
+          }}
+        >
+          <Zap className="w-5 h-5" />
+          Authorize Emergency Remediation — Initialize AI Pipeline
+          <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+        </button>
+        <p className="text-[10px] text-text-muted mt-3">
+          Secure payment processing. 256-bit SSL encrypted. No subscription required.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// STAGE 3: SUBMISSION & PIPELINE TRACKER
+// ═══════════════════════════════════════════
+function Stage3Submission({
+  form,
+  selectedTier,
+  submitState,
+  trackingId,
+  uploading,
+  isAuthenticated,
+  onSubmit,
+  onNavigate,
+}: {
+  form: FormData;
+  selectedTier: FixTier;
+  submitState: SubmitState;
+  trackingId: string;
+  uploading: boolean;
+  isAuthenticated: boolean;
+  onSubmit: () => void;
+  onNavigate: (path: string) => void;
+}) {
+  const tier = FIX_TIERS[selectedTier];
+
+  if (submitState === 'idle') {
+    return (
+      <div className="max-w-xl mx-auto text-center space-y-6 animate-fade-in">
+        <div className="glass-surface rounded-xl p-8" style={{ borderColor: 'rgba(244,63,94,0.2)' }}>
+          <h2 className="text-2xl font-black tracking-tight text-text-primary mb-4">
+            Confirm & <span className="text-rose">Initialize</span>
+          </h2>
+
+          {/* Summary */}
+          <div className="text-left space-y-3 mb-6 p-4 bg-void-light rounded-lg border border-surface-border/50">
+            <div className="flex justify-between text-xs">
+              <span className="text-text-muted">URL:</span>
+              <span className="text-text-primary font-mono truncate max-w-[200px]">{form.url}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-text-muted">Severity:</span>
+              <span className={SEVERITY_LABELS[form.severity].badgeClass}>Level {form.severity}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-text-muted">Fix Tier:</span>
+              <span className="text-magenta font-bold">{tier.name}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-text-muted">SLA:</span>
+              <span className="text-lime font-bold">{tier.sla} response</span>
+            </div>
+            <div className="border-t border-surface-border/50 pt-3 flex justify-between">
+              <span className="text-text-primary font-bold">Total:</span>
+              <span className="text-2xl font-black text-rose">${tier.price}</span>
+            </div>
+          </div>
+
+          {/* Submit Button */}
+          <button
+            onClick={onSubmit}
+            disabled={uploading}
+            className="w-full py-4 rounded-lg text-sm font-black uppercase tracking-wider text-white transition-all hover:shadow-[0_0_30px_rgba(244,63,94,0.4)]"
+            style={{ background: 'linear-gradient(135deg, #f43f5e, #e879f9)' }}
+          >
+            {uploading ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Uploading attachments...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <Zap className="w-4 h-4" /> Submit Emergency & Initialize Pipeline
+              </span>
+            )}
+          </button>
+
+          <p className="text-[10px] text-text-muted mt-3">
+            By submitting, you authorize our AI agents to analyze and repair your infrastructure.
+            All credentials are encrypted with AES-256-GCM before transmission.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (submitState === 'submitting') {
+    return (
+      <div className="max-w-xl mx-auto text-center py-16 animate-fade-in">
+        <div className="relative w-20 h-20 mx-auto mb-6">
+          <div className="absolute inset-0 rounded-full border-4 border-rose/20" />
+          <div className="absolute inset-0 rounded-full border-4 border-t-rose animate-spin" />
+          <Zap className="absolute inset-0 m-auto w-8 h-8 text-rose" />
+        </div>
+        <h2 className="text-xl font-black text-text-primary mb-2">Initializing AI Pipeline...</h2>
+        <p className="text-sm text-text-secondary">Your emergency is being processed. Stand by.</p>
+      </div>
+    );
+  }
+
+  if (submitState === 'success') {
+    return (
+      <PipelineTracker
+        form={form}
+        tier={tier}
+        tierKey={selectedTier}
+        trackingId={trackingId}
+        isAuthenticated={isAuthenticated}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
+  // Error state
+  return (
+    <div className="max-w-xl mx-auto text-center py-16">
+      <AlertTriangle className="w-12 h-12 text-rose mx-auto mb-4" />
+      <h2 className="text-xl font-black text-rose mb-2">Submission Failed</h2>
+      <p className="text-sm text-text-secondary mb-6">Please try again or contact support.</p>
+      <button
+        onClick={() => onSubmit()}
+        className="px-6 py-3 bg-rose text-white text-xs font-black uppercase tracking-wider rounded-lg hover:bg-rose-light transition-colors"
+      >
+        Retry Submission
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// PIPELINE TRACKER (Post-Submission)
+// ═══════════════════════════════════════════
+function PipelineTracker({
+  form,
+  tier,
+  tierKey,
+  trackingId,
+  isAuthenticated,
+  onNavigate,
+}: {
+  form: FormData;
+  tier: (typeof FIX_TIERS)[FixTier];
+  tierKey: FixTier;
+  trackingId: string;
+  isAuthenticated: boolean;
+  onNavigate: (path: string) => void;
+}) {
+  const [activeAgent, setActiveAgent] = useState(0);
+  const [logs, setLogs] = useState<string[]>([
+    `[${new Date().toLocaleTimeString()}] Emergency ticket ${trackingId} created`,
+    `[${new Date().toLocaleTimeString()}] Severity classified: ${SEVERITY_LABELS[form.severity].label}`,
+  ]);
+
+  const agents = [
+    { name: 'TRIAGE', icon: Eye, color: '#22d3ee', desc: 'Classifying incident scope' },
+    { name: 'ISOLATE', icon: Server, color: '#a3e635', desc: 'Provisioning sandbox VM' },
+    { name: 'REPAIR', icon: Bot, color: '#e879f9', desc: 'Generating autonomous fix' },
+    { name: 'VALIDATE', icon: ScanLine, color: '#22d3ee', desc: '42-scanner security review' },
+    { name: 'DEPLOY', icon: Zap, color: '#a3e635', desc: 'Zero-downtime deployment' },
+    { name: 'AUDIT', icon: Shield, color: '#e879f9', desc: 'Immutable compliance trail' },
+  ];
+
+  useEffect(() => {
+    const timings = [
+      { delay: 1500, log: `[TRIAGE] Analyzing ${form.url}... Issue detected: ${form.severity >= 4 ? 'Critical failure' : 'Service degradation'}` },
+      { delay: 4000, log: `[ISOLATE] Secure VM provisioned. Site cloned. Credentials vault sealed.` },
+      { delay: 8000, log: `[REPAIR] AI agent generating patch. Confidence: 94%.` },
+      { delay: 12000, log: `[VALIDATE] 42/42 scanners passed. Zero vulnerabilities detected.` },
+      { delay: 16000, log: `[DEPLOY] Fix deployed to production. Health checks passing.` },
+      { delay: 20000, log: `[AUDIT] SHA-256 trail sealed. Credentials purged. Incident resolved.` },
+    ];
+
+    timings.forEach((t, i) => {
+      setTimeout(() => {
+        setActiveAgent(i + 1);
+        setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${t.log}`]);
+      }, t.delay);
+    });
+  }, [form.url, form.severity]);
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-8 animate-fade-in">
+      {/* Success Header */}
+      <div className="text-center">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-lime-dim border border-lime/20 mb-4">
+          <CheckCircle2 className="w-4 h-4 text-lime" />
+          <span className="text-[11px] font-black uppercase tracking-widest text-lime">Emergency Submitted</span>
+        </div>
+        <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-text-primary">
+          AI Pipeline <span className="text-lime">Active</span>
+        </h2>
+        <p className="text-sm text-text-secondary mt-2">
+          {tier.name} initialized. {tier.sla} SLA guarantee.
+        </p>
+      </div>
+
+      {/* Tracking ID */}
+      <div className="glass-surface rounded-xl p-4 flex items-center justify-between">
+        <div>
+          <div className="text-[10px] text-text-muted uppercase tracking-wider font-bold">Tracking ID</div>
+          <div className="text-lg font-black font-mono text-cyan">{trackingId}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] text-text-muted uppercase tracking-wider font-bold">Status</div>
+          <div className="flex items-center gap-1.5 text-lime">
+            <span className="w-2 h-2 rounded-full bg-lime animate-pulse" />
+            <span className="text-xs font-bold uppercase">Processing</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Agent Pipeline Visualization */}
+      <div className="glass-surface rounded-xl p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-sm font-black uppercase tracking-wider text-text-primary flex items-center gap-2">
+            <Activity className="w-4 h-4 text-cyan" /> 6-Agent Pipeline
+          </h3>
+          <span className="text-[10px] text-text-muted font-mono">
+            {Math.min(activeAgent, 6)}/6 agents
+          </span>
+        </div>
+
+        {/* Horizontal agent steps */}
+        <div className="flex items-center gap-1 mb-6">
+          {agents.map((agent, i) => {
+            const isDone = i < activeAgent;
+            const isCurrent = i === activeAgent;
+            const AIcon = agent.icon;
+            return (
+              <div key={agent.name} className="flex items-center flex-1">
+                <div className="flex flex-col items-center">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500"
+                    style={{
+                      borderColor: isDone || isCurrent ? agent.color : '#1e293b',
+                      background: isDone ? `${agent.color}20` : isCurrent ? `${agent.color}15` : 'rgba(15,23,42,0.6)',
+                      boxShadow: isCurrent ? `0 0 15px ${agent.color}40` : 'none',
+                    }}
+                  >
+                    {isDone ? (
+                      <CheckCircle2 className="w-5 h-5" style={{ color: agent.color }} />
+                    ) : (
+                      <AIcon className="w-4 h-4" style={{ color: isCurrent ? agent.color : '#475569' }} />
+                    )}
+                  </div>
+                  <span className={`text-[8px] font-bold uppercase tracking-wider mt-1.5 ${isDone || isCurrent ? '' : 'text-text-disabled'}`} style={{ color: isDone || isCurrent ? agent.color : undefined }}>
+                    {agent.name}
+                  </span>
+                </div>
+                {i < agents.length - 1 && (
+                  <div className="flex-1 h-0.5 mx-1" style={{ background: i < activeAgent ? agent.color : '#1e293b' }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Current agent description */}
+        {activeAgent < agents.length && (
+          <div className="p-3 rounded-lg border text-center" style={{ borderColor: `${agents[activeAgent].color}30`, background: `${agents[activeAgent].color}10` }}>
+            <span className="text-xs font-bold" style={{ color: agents[activeAgent].color }}>
+              {agents[activeAgent].name}: {agents[activeAgent].desc}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Live Logs */}
+      <div className="glass-surface rounded-xl p-6">
+        <h3 className="text-sm font-black uppercase tracking-wider text-text-primary mb-4 flex items-center gap-2">
+          <Radio className="w-4 h-4 text-lime animate-pulse" /> Live Operation Log
+        </h3>
+        <div className="bg-void-deep rounded-lg p-4 font-mono text-[11px] space-y-1.5 max-h-48 overflow-y-auto">
+          {logs.map((log, i) => (
+            <div key={i} className="text-text-secondary">
+              <span className="text-lime">&gt;</span> {log}
+            </div>
+          ))}
+          <div className="text-text-muted animate-pulse">
+            <span className="text-lime">&gt;</span> _
+          </div>
+        </div>
+      </div>
+
+      {/* CTA for anonymous users */}
+      {!isAuthenticated && (
+        <div className="glass-surface rounded-xl p-6 text-center" style={{ borderColor: 'rgba(163,230,53,0.2)' }}>
+          <h3 className="text-sm font-black text-text-primary mb-2">Track Your Fix in Real Time</h3>
+          <p className="text-xs text-text-secondary mb-4">
+            Create an account to view the full 42-scanner dashboard, chat with your engineer, and monitor every step of the repair pipeline.
+          </p>
+          <button
+            onClick={() => onNavigate(`/login?intent=emergency&track=${trackingId}&tier=${tierKey}`)}
+            className="px-6 py-3 bg-lime text-void-dark text-xs font-black uppercase tracking-wider rounded-lg hover:bg-lime-light transition-colors"
+          >
+            Create Account — View Dashboard
+          </button>
+        </div>
+      )}
     </div>
   );
 }
