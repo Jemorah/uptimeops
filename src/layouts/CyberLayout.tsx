@@ -70,6 +70,7 @@ const ROLE_BADGE: Record<string, { label: string; color: string; icon: React.Ele
   coordinator: { label: 'COORDINATOR', color: 'text-lime border-lime/30 bg-lime-dim',       icon: ShieldAlert },
   engineer:    { label: 'ENGINEER',    color: 'text-cyan border-cyan/30 bg-cyan-dim',       icon: HardHat },
   customer:    { label: 'CUSTOMER',    color: 'text-magenta border-magenta/30 bg-magenta-dim', icon: Building2 },
+  public:      { label: 'GUEST',       color: 'text-text-muted border-text-disabled/30 bg-void-light', icon: User },
 };
 
 interface Props {

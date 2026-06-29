@@ -27,11 +27,14 @@ const ADMIN_EMAILS = ['cumouat@gmail.com'];
 
 export function getRoleFromUser(user: User | null): UserRole {
   if (!user) return 'public';
-  if (ADMIN_EMAILS.includes(user.email || '')) return 'admin';
-  const metadataRole = user.user_metadata?.role as string;
+  const email = (user.email || '').toLowerCase();
+  if (ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email)) return 'admin';
+  const metadataRole = (user.user_metadata?.role as string || '').toLowerCase();
   if (metadataRole === 'admin' || metadataRole === 'coordinator') return metadataRole as UserRole;
   if (metadataRole === 'engineer') return 'engineer';
   if (metadataRole === 'customer') return 'customer';
+  // Default: if user has no metadata role but has admin email, they're admin
+  if (ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email)) return 'admin';
   return 'customer';
 }
 
