@@ -16,11 +16,8 @@
       ]
     }
   ],
-  "build": {
-    "env": {
-      "NPM_CONFIG_REGISTRY": "https://registry.npmjs.org"
-    }
-  },
+  "installCommand": "npm config set registry https://registry.npmjs.org && npm install --registry https://registry.npmjs.org",
+  "buildCommand": "npm run build",
   "github": {
     "enabled": false
   }
