@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase/client';
 import { Terminal, Loader2, Radio, Clock, Users, Mail, X, Shield, Plus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,6 +22,7 @@ interface Engineer {
 const SPECIALIZATIONS = ['Frontend', 'Backend', 'DevOps', 'Security', 'Database', 'Mobile', 'Cloud', 'SRE'];
 
 export function HQEngineers() {
+  const navigate = useNavigate();
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -162,7 +164,12 @@ export function HQEngineers() {
 
             <div className="flex items-center justify-between pt-3 border-t border-white/5">
               <span className="text-xs text-white/25 flex items-center gap-1"><Clock className="w-3 h-3" />{eng.status || 'active'}</span>
-              <button className="text-xs text-lime hover:underline font-bold">View Details</button>
+              <button
+                onClick={() => navigate(`/hq/engineers?engineer=${eng.id}`)}
+                className="text-xs text-lime hover:underline font-bold"
+              >
+                View Details
+              </button>
             </div>
           </div>
         ))}

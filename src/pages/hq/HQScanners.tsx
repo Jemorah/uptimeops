@@ -5,6 +5,7 @@ import { ScannerRegistry } from '@/components/security/ScannerRegistry';
 import { Activity, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 export function HQScanners() {
   const [stats, setStats] = useState({ total: 0, active: 0, failed: 0 });
@@ -28,7 +29,16 @@ export function HQScanners() {
           <h1 className="text-xl font-black text-white tracking-tight">42-Scanner Registry</h1>
           <p className="text-xs text-white/40 mt-0.5">Manage all security scanners across the 6-stage pipeline</p>
         </div>
-        <button className="flex items-center gap-1.5 px-3 py-2 bg-[#a3e635]/10 text-[#a3e635] rounded-lg text-xs font-bold hover:bg-[#a3e635]/20 transition-all">
+        <button
+          onClick={async () => {
+            const { data } = await supabase.from('scanner_registry').select('*');
+            if (data) {
+              const active = data.filter((s: any) => s.status === 'active').length;
+              toast.success(`${active}/${data.length} scanners active`);
+            }
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 bg-[#a3e635]/10 text-[#a3e635] rounded-lg text-xs font-bold hover:bg-[#a3e635]/20 transition-all"
+        >
           <RefreshCw className="w-3.5 h-3.5" /> Health Check
         </button>
       </div>

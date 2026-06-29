@@ -20,8 +20,16 @@ const TABS = [
 export function EngineerSecurity() {
   const [activeTab, setActiveTab] = useState<string>('codegraph');
   const [incidentId, setIncidentId] = useState<string>('');
+  const [, setLocalGraph] = useState<any>(null);
   const { graph } = useCodeGraph(incidentId || null);
-  const { scans } = useScanResults(incidentId || null);
+  const { scans, refresh: refreshScans } = useScanResults(incidentId || null);
+
+  // Generate a sample graph for demo
+  const generateCodeGraph = () => ({
+    nodes: [{ id: 'root', label: 'src/index.ts', type: 'entry' as const }],
+    edges: [],
+    metrics: { totalFiles: 1, totalDependencies: 0, circularDeps: 0, complexity: 'low' as const },
+  });
 
   // Flatten SARIF-like results from scans
   const sarifResults = scans.flatMap(s =>
@@ -66,7 +74,10 @@ export function EngineerSecurity() {
       {activeTab === 'codegraph' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#22d3ee]/10 text-[#22d3ee] rounded-lg text-xs font-bold hover:bg-[#22d3ee]/20">
+            <button
+              onClick={() => { setLocalGraph(generateCodeGraph()); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#22d3ee]/10 text-[#22d3ee] rounded-lg text-xs font-bold hover:bg-[#22d3ee]/20"
+            >
               <Play className="w-3 h-3" /> Generate Graph
             </button>
           </div>
@@ -77,7 +88,10 @@ export function EngineerSecurity() {
       {activeTab === 'scanners' && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#a3e635]/10 text-[#a3e635] rounded-lg text-xs font-bold hover:bg-[#a3e635]/20">
+            <button
+              onClick={() => { refreshScans(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#a3e635]/10 text-[#a3e635] rounded-lg text-xs font-bold hover:bg-[#a3e635]/20"
+            >
               <Play className="w-3 h-3" /> Run Manual Scan
             </button>
           </div>

@@ -5,7 +5,10 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 import {
   AlertTriangle, CheckCircle, Search, Loader2,
   Filter, RefreshCw,
@@ -43,6 +46,8 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
 const PRIORITY_LABELS: Record<string, string> = { P1_CRITICAL: 'P1 Critical', P2_HIGH: 'P2 High', P3_MEDIUM: 'P3 Medium', P4_LOW: 'P4 Low' };
 
 export function HQIncidents() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [customers, setCustomers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -187,8 +192,25 @@ export function HQIncidents() {
                             <div><span className="text-white/25">Pipeline:</span> <span className="text-white/50">{inc.pipeline_id || 'N/A'}</span></div>
                           </div>
                           <div className="flex gap-3">
-                            <button className="text-[10px] text-lime hover:text-lime/70 uppercase tracking-wider font-bold">Assign Engineer</button>
-                            <button className="text-[10px] text-white/30 hover:text-white/50 uppercase tracking-wider font-bold">Escalate</button>
+                            <button
+                              onClick={() => navigate(`/hq/incidents?assign=${inc.id}`)}
+                              className="text-[10px] text-lime hover:text-lime/70 uppercase tracking-wider font-bold"
+                            >
+                              Assign Engineer
+                            </button>
+                            <button
+                              onClick={async () => {
+                                const { error } = await supabase.from('human_escalations').insert({
+                                  incident_id: inc.id,
+                                  reason: 'HQ escalation',
+                                  escalated_by: user?.id,
+                                });
+                                if (!error) toast.info(`Incident ${inc.id.slice(0, 8)} escalated to human engineer.`);
+                              }}
+                              className="text-[10px] text-white/30 hover:text-white/50 uppercase tracking-wider font-bold"
+                            >
+                              Escalate
+                            </button>
                           </div>
                         </div>
                       </td></tr>

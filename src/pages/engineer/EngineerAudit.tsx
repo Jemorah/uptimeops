@@ -50,7 +50,21 @@ export function EngineerAudit() {
           <h2 className="text-2xl font-black tracking-tight">AUDIT TRAIL</h2>
           <p className="text-sm text-white/40 mt-1">Complete log of all actions and decisions</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 border border-white/10 text-sm text-white/60 hover:border-lime hover:text-lime transition-colors self-start">
+        <button
+          onClick={() => {
+            const headers = ['Timestamp,Actor,Action,Resource,Details'];
+            const rows = auditLog.map((l: AuditEntry) => `${l.timestamp},${l.engineer},${l.action},${l.target},"${l.details || ''}"`);
+            const csv = [...headers, ...rows].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `audit-trail-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="flex items-center gap-2 px-4 py-2 border border-white/10 text-sm text-white/60 hover:border-lime hover:text-lime transition-colors self-start"
+        >
           <Download className="w-4 h-4" />
           Export CSV
         </button>

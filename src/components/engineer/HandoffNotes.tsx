@@ -165,7 +165,19 @@ export function HandoffNotes({ incidentId }: HandoffNotesProps) {
       {/* Escalation Handoff */}
       {notes.length > 0 && (
         <div className="px-3 py-2 border-t border-white/5 bg-black/10">
-          <button className="flex items-center gap-2 text-[10px] text-white/30 hover:text-white/50 transition-colors w-full">
+          <button
+            onClick={() => {
+              const report = notes.map((n: any) => `[${n.timestamp}] ${n.author}: ${n.content}`).join('\n');
+              const blob = new Blob([`HANDOFF REPORT\n\n${report}`], { type: 'text/plain' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `handoff-report-${Date.now()}.txt`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-2 text-[10px] text-white/30 hover:text-white/50 transition-colors w-full"
+          >
             <Shield className="w-3 h-3" />
             <span>Generate escalation handoff report</span>
           </button>

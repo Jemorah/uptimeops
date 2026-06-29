@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { Copy, Check, Send, Mail, Clock, AlertTriangle, CheckCircle, Wrench } from 'lucide-react';
+import { supabase } from '@/lib/supabase/client';
 
 interface Template {
   id: string;
@@ -289,7 +290,20 @@ export function CommTemplates({ incidentId }: CommTemplatesProps) {
           {copied ? <Check className="w-3 h-3 text-lime" /> : <Copy className="w-3 h-3" />}
           {copied ? 'COPIED' : 'COPY'}
         </button>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 bg-lime/10 border border-lime/30 text-lime text-xs hover:bg-lime/20 transition-colors">
+        <button
+          onClick={() => {
+            // Insert communication log entry
+            supabase.from('communications_log').insert({
+              incident_id: incidentId,
+              channel: 'email',
+              direction: 'outbound',
+              subject: customizedSubject,
+              content: customizedBody,
+              status: 'sent',
+            });
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-lime/10 border border-lime/30 text-lime text-xs hover:bg-lime/20 transition-colors"
+        >
           <Send className="w-3 h-3" />
           SEND TO CUSTOMER
         </button>

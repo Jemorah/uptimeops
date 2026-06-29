@@ -13,6 +13,7 @@ interface NotificationCenterProps {
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
   onDismiss: (id: string) => void;
+  onActionClick?: (notif: AppNotification) => void;
 }
 
 const typeIcons: Record<AppNotification['type'], typeof Info> = {
@@ -32,7 +33,7 @@ const typeColors: Record<AppNotification['type'], string> = {
   alert: 'text-white/40',
 };
 
-export function NotificationCenter({ notifications, unreadCount, isOpen, onToggle, onMarkRead, onMarkAllRead, onDismiss }: NotificationCenterProps) {
+export function NotificationCenter({ notifications, unreadCount, isOpen, onToggle, onMarkRead, onMarkAllRead, onDismiss, onActionClick }: NotificationCenterProps) {
   return (
     <div className="relative">
       {/* Bell Button */}
@@ -97,7 +98,10 @@ export function NotificationCenter({ notifications, unreadCount, isOpen, onToggl
                               </span>
                               <div className="flex items-center gap-2">
                                 {notif.actionLabel && (
-                                  <button className="text-[9px] text-white/40 hover:text-white/60 transition-colors font-bold uppercase">
+                                  <button
+                                    onClick={e => { e.stopPropagation(); onActionClick?.(notif); }}
+                                    className="text-[9px] text-white/40 hover:text-lime transition-colors font-bold uppercase"
+                                  >
                                     {notif.actionLabel}
                                   </button>
                                 )}

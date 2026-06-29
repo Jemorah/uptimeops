@@ -131,10 +131,10 @@ export function CoordinatorChat({ incidentId }: CoordinatorChatProps) {
       {/* Input */}
       <div className="border-t border-white/5 p-2">
         <div className="flex items-center gap-2 mb-2">
-          <button className="p-1 text-white/20 hover:text-white/40 transition-colors">
+          <button className="p-1 text-white/20 hover:text-white/40 transition-colors" title="File upload (coming v2.2)">
             <Paperclip className="w-3 h-3" />
           </button>
-          <button className="p-1 text-white/20 hover:text-white/40 transition-colors">
+          <button className="p-1 text-white/20 hover:text-white/40 transition-colors" title="Emoji picker (coming v2.2)">
             <Smile className="w-3 h-3" />
           </button>
           <span className="text-[10px] text-white/20">All messages logged for audit</span>

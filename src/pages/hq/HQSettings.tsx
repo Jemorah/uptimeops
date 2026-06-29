@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { User, Bell, Shield, Key, Mail, Save, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -11,6 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 
 export function HQSettings() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [notifications, setNotifications] = useState({
     email: true,
@@ -108,10 +110,16 @@ export function HQSettings() {
           <Key className="w-4 h-4 text-lime" /> Security
         </h3>
         <div className="space-y-3">
-          <button className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70">
+          <button
+            onClick={() => navigate('/reset-password')}
+            className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70"
+          >
             Change Password
           </button>
-          <button className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70">
+          <button
+            onClick={() => toast.info('Two-factor authentication setup coming in v2.2')}
+            className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70"
+          >
             Enable Two-Factor Authentication
           </button>
         </div>

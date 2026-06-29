@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Mail, Bell, LayoutDashboard, FileText, TrendingUp } from 'lucide-react';
 import { useCommunicationSystem } from '@/hooks/useCommunicationSystem';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -27,6 +28,7 @@ const TABS: { key: CommTab; label: string; icon: React.ElementType }[] = [
 ];
 
 export function CustomerComms() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<CommTab>('overview');
   const comms = useCommunicationSystem();
   const notifs = useNotifications();
@@ -126,7 +128,14 @@ export function CustomerComms() {
                   <p className="text-xs text-white/30 mt-1">{n.message}</p>
                   <div className="flex items-center gap-3 mt-2">
                     {!n.read && <button onClick={() => notifs.markRead(n.id)} className="text-[10px] text-white/40 hover:text-white/60">Mark read</button>}
-                    {n.actionLabel && <button className="text-[10px] text-lime hover:text-lime/70">{n.actionLabel}</button>}
+                    {n.actionLabel && (
+                      <button
+                        onClick={() => { if (n.actionUrl) navigate(n.actionUrl); }}
+                        className="text-[10px] text-lime hover:text-lime/70"
+                      >
+                        {n.actionLabel}
+                      </button>
+                    )}
                     <button onClick={() => notifs.dismiss(n.id)} className="text-[10px] text-white/20 hover:text-white/40">Dismiss</button>
                   </div>
                 </div>

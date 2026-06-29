@@ -30,7 +30,30 @@ export function AuditReportPanel({ report }: AuditReportProps) {
             <FileText className="w-4 h-4 text-purple-400" />
             Audit Report
           </h3>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-white/40 text-xs hover:border-white/20 transition-colors">
+          <button
+            onClick={() => {
+              const text = `UPTIMEOPS AUDIT REPORT
+Incident: ${report.incidentId}
+Generated: ${report.generatedAt}
+Duration: ${report.totalDuration}
+Total Cost: $${report.totalCost.toFixed(2)}
+Agents: ${report.agentsInvolved.join(', ')}
+Files Modified: ${report.filesModified}
+Tests: ${report.testsPassed} passed, ${report.testsFailed} failed
+Root Cause: ${report.rootCause}
+Fix: ${report.fixDescription}
+Certificate: ${report.complianceCertificateId || 'N/A'}
+`;
+              const blob = new Blob([text], { type: 'text/plain' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `audit-report-${report.incidentId}.txt`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-white/40 text-xs hover:border-white/20 transition-colors"
+          >
             <Download className="w-3 h-3" />
             EXPORT
           </button>

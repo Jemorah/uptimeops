@@ -81,7 +81,19 @@ export function OneTimeDashboard({ token = 'tk-7f3a9e2d' }: OneTimeDashboardProp
             <div className="text-sm font-black font-mono text-lime">SHA-256</div>
           </div>
         </div>
-        <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white/60 text-xs font-bold hover:bg-white/10 transition-colors rounded-lg">
+        <button
+          onClick={() => {
+            const report = `UPTIMEOPS AUDIT REPORT\nGenerated: ${new Date().toISOString()}\nToken: ${token}\nStatus: ${confirmed === 'fixed' ? 'Customer confirmed fix' : confirmed === 'broken' ? 'Customer reported still broken' : 'Awaiting confirmation'}\nTime remaining: ${timeLeft.hours}h ${timeLeft.minutes}m\n\nThis report certifies that the incident was handled through the UptimeOps secure pipeline.`;
+            const blob = new Blob([report], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `uptimeops-report-${token}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white/60 text-xs font-bold hover:bg-white/10 transition-colors rounded-lg"
+        >
           <ExternalLink className="w-3 h-3" />
           DOWNLOAD FULL REPORT
         </button>

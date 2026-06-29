@@ -10,11 +10,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStore } from '@/lib/store';
+import { useUIStore } from '@/stores/uiStore';
 
 export function GlobalNav() {
   const location = useLocation();
   const { user, role, isAuthenticated, signOut } = useAuth();
   const { unreadCount } = useStore();
+  const { toggleNotifications } = useUIStore();
 
   if (!isAuthenticated) return null;
 
@@ -69,7 +71,11 @@ export function GlobalNav() {
         </span>
 
         {/* Notifications */}
-        <button className="relative p-1.5 hover:bg-white/5 transition-colors">
+        <button
+          onClick={toggleNotifications}
+          className="relative p-1.5 hover:bg-white/5 transition-colors"
+          title="Toggle notifications"
+        >
           <Bell className="w-3.5 h-3.5 text-white/30" />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 flex items-center justify-center bg-magenta text-white text-[7px] font-bold rounded-full">

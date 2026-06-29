@@ -2,6 +2,7 @@
 // FOLLOW-UP SYSTEM — Stage 11: Email sequences and retention
 // ═══════════════════════════════════════════════════════════════
 
+import { useState } from 'react';
 import { Mail, Clock, CheckCircle, Send, Star, TrendingUp } from 'lucide-react';
 import type { FollowUpEmail, ServiceSelection } from './types';
 
@@ -17,6 +18,7 @@ const SUBSCRIPTION_EMAILS = [
 ];
 
 export function FollowUpSystem({ emails, serviceType }: FollowUpSystemProps) {
+  const [npsScore, setNpsScore] = useState<number | null>(null);
   return (
     <div className="bg-surface border border-white/5">
       <div className="p-4 border-b border-white/5">
@@ -97,10 +99,13 @@ export function FollowUpSystem({ emails, serviceType }: FollowUpSystemProps) {
             {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => (
               <button
                 key={score}
+                onClick={() => setNpsScore(score)}
                 className={`flex-1 py-1.5 text-xs font-bold font-mono transition-colors ${
-                  score <= 6 ? 'hover:bg-red/20 text-white/20 hover:text-red-400' :
-                  score <= 8 ? 'hover:bg-yellow/20 text-white/20 hover:text-yellow-400' :
-                  'hover:bg-lime/20 text-white/20 hover:text-lime'
+                  score === npsScore
+                    ? score <= 6 ? 'bg-red/20 text-red-400' : score <= 8 ? 'bg-yellow/20 text-yellow-400' : 'bg-lime/20 text-lime'
+                    : score <= 6 ? 'hover:bg-red/20 text-white/20 hover:text-red-400' :
+                    score <= 8 ? 'hover:bg-yellow/20 text-white/20 hover:text-yellow-400' :
+                    'hover:bg-lime/20 text-white/20 hover:text-lime'
                 }`}
               >
                 {score}

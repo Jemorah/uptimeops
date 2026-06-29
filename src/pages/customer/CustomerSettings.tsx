@@ -264,7 +264,10 @@ export function CustomerSettings() {
         </div>
 
         <div className="pt-3 border-t border-white/5">
-          <button className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70 flex items-center gap-2">
+          <button
+            onClick={() => toast.info('Two-factor authentication setup coming in v2.2')}
+            className="w-full text-left px-4 py-3 border border-white/10 text-sm hover:border-lime transition-colors text-white/70 flex items-center gap-2"
+          >
             <Shield className="w-3.5 h-3.5" /> Enable Two-Factor Authentication
           </button>
         </div>

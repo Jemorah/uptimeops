@@ -80,7 +80,19 @@ export function CustomerSecurity() {
           <h1 className="text-xl font-black text-white tracking-tight">Security Posture</h1>
           <p className="text-xs text-white/40 mt-0.5">Aggregated from 42-scanner validation across all incidents</p>
         </div>
-        <button className="flex items-center gap-1.5 px-3 py-2 bg-[#a3e635]/10 text-[#a3e635] rounded-lg text-xs font-bold hover:bg-[#a3e635]/20 transition-all">
+        <button
+          onClick={() => {
+            const text = `UPTIMEOPS SECURITY REPORT\nGenerated: ${new Date().toISOString()}\nOverall Score: ${score}/100\n\nCategory Scores:\n${breakdown ? Object.entries(breakdown).map(([k, v]) => `- ${k}: ${v}/100`).join('\n') : 'No breakdown available'}\n`;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `security-report-${new Date().toISOString().split('T')[0]}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 bg-[#a3e635]/10 text-[#a3e635] rounded-lg text-xs font-bold hover:bg-[#a3e635]/20 transition-all"
+        >
           <Download className="w-3.5 h-3.5" /> Security Report
         </button>
       </div>

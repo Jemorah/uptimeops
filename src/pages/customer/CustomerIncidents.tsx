@@ -4,8 +4,10 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 import {
   AlertTriangle, CheckCircle, Clock, Search, Loader2,
   Filter, ArrowUpDown, Shield, Wrench, XCircle, RefreshCw
@@ -40,6 +42,7 @@ const PRIORITY_LABELS: Record<string, string> = { P1_CRITICAL: 'P1 Critical', P2
 
 export function CustomerIncidents() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -236,8 +239,27 @@ export function CustomerIncidents() {
                               <div><span className="text-white/25">Priority:</span> <span className="text-white/50">{PRIORITY_LABELS[inc.priority] || inc.priority}</span></div>
                             </div>
                             <div className="flex gap-2">
-                              <button className="text-[10px] text-white/30 hover:text-lime uppercase tracking-wider font-bold transition-colors">View Full Details</button>
-                              {inc.status === 'open' && <button className="text-[10px] text-white/30 hover:text-white/60 uppercase tracking-wider font-bold transition-colors">Escalate</button>}
+                              <button
+                                onClick={() => navigate(`/customer/incidents?id=${inc.id}`)}
+                                className="text-[10px] text-white/30 hover:text-lime uppercase tracking-wider font-bold transition-colors"
+                              >
+                                View Full Details
+                              </button>
+                              {inc.status === 'open' && (
+                                <button
+                                  onClick={async () => {
+                                    const { error } = await supabase.from('human_escalations').insert({
+                                      incident_id: inc.id,
+                                      reason: 'Customer escalation from portal',
+                                      escalated_by: user?.id,
+                                    });
+                                    if (!error) toast.success('A human engineer will review your incident.');
+                                  }}
+                                  className="text-[10px] text-white/30 hover:text-white/60 uppercase tracking-wider font-bold transition-colors"
+                                >
+                                  Escalate
+                                </button>
+                              )}
                             </div>
                           </div>
                         </td>
