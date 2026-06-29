@@ -119,9 +119,9 @@ export function HQAudit() {
           <tbody className="divide-y divide-white/5">
             {filtered.map(e => (
               <tr key={e.id} className="hover:bg-white/[0.02] transition-colors">
-                <td className="p-4 text-xs font-mono text-white/45">{e.id?.slice(0, 8)}</td>
+                <td className="p-4 text-xs font-mono text-white/45">{String(e.id ?? '').slice(0, 8)}</td>
                 <td className="p-4 text-xs font-mono text-white/35">{new Date(e.created_at).toLocaleString()}</td>
-                <td className="p-4 text-xs text-white/50">{e.actor_id?.slice(0, 12)}</td>
+                <td className="p-4 text-xs text-white/50">{String(e.actor_id ?? '').slice(0, 12)}</td>
                 <td className="p-4"><span className={`text-xs font-bold uppercase ${roleCls(e.actor_type)}`}>{e.actor_type}</span></td>
                 <td className="p-4 text-xs font-bold uppercase text-white/60">{e.action}</td>
                 <td className="p-4"><div className="text-xs font-mono text-white/45">{e.target_id}</div></td>

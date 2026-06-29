@@ -205,7 +205,7 @@ export function HQIncidents() {
                                   reason: 'HQ escalation',
                                   escalated_by: user?.id,
                                 });
-                                if (!error) toast.info(`Incident ${inc.id.slice(0, 8)} escalated to human engineer.`);
+                                if (!error) toast.info(`Incident ${String(inc.id).slice(0, 8)} escalated to human engineer.`);
                               }}
                               className="text-[10px] text-white/30 hover:text-white/50 uppercase tracking-wider font-bold"
                             >
