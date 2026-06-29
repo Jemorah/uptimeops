@@ -134,14 +134,14 @@ CREATE TRIGGER trg_webhook_subscription_changed
 -- Enable pg_cron (if not already enabled)
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
--- Remove existing jobs to avoid duplicates
-SELECT cron.unschedule('archive-expired-links');
-SELECT cron.unschedule('calculate-all-mrr');
-SELECT cron.unschedule('cleanup-old-audit-logs');
+-- Remove existing jobs to avoid duplicates (wrapped in DO blocks to handle missing jobs)
+DO $$ BEGIN PERFORM cron.unschedule('archive-links'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('calculate-all-mrr'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('cleanup-old-audit-logs'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- Archive expired temporary links (daily at 3 AM)
 SELECT cron.schedule(
-  'archive-expired-links',
+  'archive-links',
   '0 3 * * *',
   $$ SELECT archive_expired_links() $$
 );
