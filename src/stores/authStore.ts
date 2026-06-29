@@ -71,8 +71,11 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'uptimeops-auth',
-      partialize: (state) => ({
-        role: state.role,
+      // Note: We intentionally do NOT persist role.
+      // Role is always derived from the user via getRoleFromUser().
+      // Persisting it causes stale roles when switching accounts.
+      partialize: (_state) => ({
+        // Only persist non-role state if needed
       }),
     }
   )
