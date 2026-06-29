@@ -1,15 +1,27 @@
 // ═══════════════════════════════════════════════════════════════
-// LOGIN PAGE — Global Entry Point for all users
-// After successful login, useAuth.doPostLoginRedirect handles
-// cross-subdomain redirect (uptimeops.org) or hash reload (Vercel).
+// LOGIN PAGE — Global Entry Point
+// After successful login, useAuth redirects to the correct portal.
+// Has a 10-second timeout so the UI never hangs forever.
 // ═══════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Zap, Mail, Lock, Github, AlertCircle, ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+
+const LOGIN_TIMEOUT_MS = 10000; // 10 seconds max
+
+// Promise wrapper with timeout
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
 
 export function LoginPage() {
   const { signIn, signUp, signInWithOAuth } = useAuth();
@@ -21,6 +33,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showAdminSetup, setShowAdminSetup] = useState(false);
+  const abortRef = useRef(false);
 
   // ── Email/Password Login ──
   async function handleSubmit(e: React.FormEvent) {
@@ -28,54 +41,76 @@ export function LoginPage() {
     setError('');
     setShowAdminSetup(false);
     setLoading(true);
+    abortRef.current = false;
 
-    if (mode === 'signin') {
-      const { error: err, role } = await signIn(email, password);
-      setLoading(false);
+    try {
+      if (mode === 'signin') {
+        console.log('[LoginPage] Calling signIn for:', email);
 
-      if (err) {
-        if (email.toLowerCase() === 'cumouat@gmail.com' && err.message?.includes('Invalid')) {
-          setError('Admin account not found. Click below to create it.');
-          setShowAdminSetup(true);
-        } else {
-          setError(err.message);
-          toast.error(err.message);
+        const result = await withTimeout(
+          signIn(email, password),
+          LOGIN_TIMEOUT_MS,
+          'Sign in'
+        );
+
+        if (abortRef.current) return;
+
+        if (result.error) {
+          console.log('[LoginPage] signIn error:', result.error.message);
+          if (email.toLowerCase() === 'cumouat@gmail.com' && result.error.message?.includes('Invalid')) {
+            setError('Admin account not found. Click below to create it.');
+            setShowAdminSetup(true);
+          } else {
+            setError(result.error.message);
+            toast.error(result.error.message);
+          }
+          return;
+        }
+
+        if (result.role) {
+          console.log('[LoginPage] Sign in success, role:', result.role);
+          toast.success(`Signed in — ${result.role} access`);
+          // Redirect is handled by useAuth.doPostLoginRedirect()
         }
         return;
       }
 
-      if (role) {
-        toast.success(`Signed in — ${role} access`);
-        // Redirect is handled by useAuth.doPostLoginRedirect()
-        // Do NOT navigate here — let the redirect happen
-      }
-      return;
-    }
+      // Sign up mode
+      if (mode === 'signup') {
+        if (!fullName.trim()) {
+          setError('Full name is required');
+          return;
+        }
 
-    if (mode === 'signup') {
-      if (!fullName.trim()) {
-        setLoading(false);
-        setError('Full name is required');
-        return;
-      }
+        const result = await withTimeout(
+          signUp(email, password, { full_name: fullName }),
+          LOGIN_TIMEOUT_MS,
+          'Sign up'
+        );
 
-      const { error: err, role } = await signUp(email, password, { full_name: fullName });
+        if (abortRef.current) return;
+
+        if (result.error) {
+          setError(result.error.message);
+          toast.error(result.error.message);
+          return;
+        }
+
+        if (result.role) {
+          toast.success(`Account created — ${result.role} access`);
+          // Redirect handled by useAuth
+          return;
+        }
+
+        toast.success('Check your email for confirmation link.');
+        setMode('signin');
+      }
+    } catch (err: any) {
+      console.error('[LoginPage] Timeout or error:', err?.message);
+      setError(err?.message || 'Request timed out. Please check your connection and try again.');
+      toast.error('Request timed out. Please try again.');
+    } finally {
       setLoading(false);
-
-      if (err) {
-        setError(err.message);
-        toast.error(err.message);
-        return;
-      }
-
-      if (role) {
-        toast.success(`Account created — ${role} access`);
-        // Redirect handled by useAuth
-        return;
-      }
-
-      toast.success('Check your email for confirmation link.');
-      setMode('signin');
     }
   }
 
@@ -85,26 +120,41 @@ export function LoginPage() {
     setShowAdminSetup(false);
     setLoading(true);
 
-    const { error: suErr } = await signUp(email, password, { full_name: 'Admin' });
-    if (suErr && !suErr.message?.includes('already')) {
+    try {
+      const suResult = await withTimeout(
+        signUp(email, password, { full_name: 'Admin' }),
+        LOGIN_TIMEOUT_MS,
+        'Admin signup'
+      );
+
+      if (suResult.error && !suResult.error.message?.includes('already')) {
+        setLoading(false);
+        setError('Failed to create admin: ' + suResult.error.message);
+        toast.error(suResult.error.message);
+        return;
+      }
+
+      const siResult = await withTimeout(
+        signIn(email, password),
+        LOGIN_TIMEOUT_MS,
+        'Admin signin'
+      );
+
       setLoading(false);
-      setError('Failed to create admin: ' + suErr.message);
-      toast.error(suErr.message);
-      return;
-    }
 
-    const { error: siErr, role } = await signIn(email, password);
-    setLoading(false);
+      if (siResult.error) {
+        setError(siResult.error.message);
+        toast.error(siResult.error.message);
+        return;
+      }
 
-    if (siErr) {
-      setError(siErr.message);
-      toast.error(siErr.message);
-      return;
-    }
-
-    if (role) {
-      toast.success(`Admin account created — ${role} access granted`);
-      // Redirect handled by useAuth
+      if (siResult.role) {
+        toast.success(`Admin account created — ${siResult.role} access granted`);
+      }
+    } catch (err: any) {
+      setLoading(false);
+      setError(err?.message || 'Request timed out');
+      toast.error('Request timed out. Please try again.');
     }
   }
 
@@ -114,13 +164,24 @@ export function LoginPage() {
     setShowAdminSetup(false);
     setLoading(true);
 
-    const { error: err } = await signInWithOAuth(provider);
-    if (err) {
+    try {
+      const result = await withTimeout(
+        signInWithOAuth(provider),
+        LOGIN_TIMEOUT_MS,
+        'OAuth'
+      );
+
+      if (result.error) {
+        setLoading(false);
+        setError(result.error.message);
+        toast.error(result.error.message);
+      }
+      // If no error, browser redirects to OAuth provider
+    } catch (err: any) {
       setLoading(false);
-      setError(err.message);
-      toast.error(err.message);
+      setError(err?.message || 'OAuth request timed out');
+      toast.error('OAuth request timed out');
     }
-    // If no error, browser redirects to OAuth provider
   }
 
   return (
@@ -143,7 +204,7 @@ export function LoginPage() {
         {error && (
           <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            {error}
+            <span>{error}</span>
           </div>
         )}
 
