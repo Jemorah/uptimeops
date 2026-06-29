@@ -1,12 +1,32 @@
 // UptimeOps — Stripe Webhook Handler
-// Processes payment_intent.succeeded, payment_intent.payment_failed, invoice.* events
+// Verifies stripe-signature, processes payment events
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { crypto } from 'https://deno.land/std@0.224.0/crypto/mod.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { logInfo, logError } from '../_shared/logger.ts';
+import { getSupabaseClient } from '../_shared/supabase.ts';
 
 const FUNCTION = 'stripe-webhook';
+
+// HMAC-SHA256 signature verification for Stripe webhooks
+async function verifyStripeSignature(payload: string, signature: string, secret: string): Promise<boolean> {
+  const parts = signature.split(',');
+  const timestamp = parts.find(p => p.startsWith('t='))?.split('=')[1];
+  const sigHash = parts.find(p => p.startsWith('v1='))?.split('=')[1];
+  if (!timestamp || !sigHash) return false;
+
+  const signedPayload = `${timestamp}.${payload}`;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(signedPayload));
+  const computed = Array.from(new Uint8Array(mac))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return computed === sigHash;
+}
 
 serve(async (req) => {
   const cors = handleCors(req);
@@ -17,12 +37,24 @@ serve(async (req) => {
     if (!signature) throw new Error('Missing stripe-signature header');
 
     const body = await req.text();
-    const event = JSON.parse(body);
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // Verify signature with STRIPE_WEBHOOK_SECRET
+    const stripeSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
+    if (stripeSecret) {
+      const valid = await verifyStripeSignature(body, signature, stripeSecret);
+      if (!valid) {
+        logError(FUNCTION, 'Invalid stripe-signature', null);
+        return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    const event = JSON.parse(body);
+    logInfo(FUNCTION, `Received ${event.type}`, { id: event.id });
+
+    const supabase = getSupabaseClient();
 
     switch (event.type) {
       case 'payment_intent.succeeded': {
@@ -89,7 +121,8 @@ serve(async (req) => {
         break;
       }
 
-      default:;
+      default:
+        logInfo(FUNCTION, `Unhandled event type`, { type: event.type });
     }
 
     return new Response(JSON.stringify({ received: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
