@@ -43,6 +43,5 @@ coverage
 .stylelintcache
 *.tsbuildinfo
 supabase_backup_*
-package-lock.json
 .vercel
 *.png
