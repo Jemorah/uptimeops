@@ -1,27 +1,25 @@
 // ═══════════════════════════════════════════════════════════════
 // AUTH CONTEXT — UptimeOps
-// Session stored in localStorage. No page reloads on login.
-// LoginPage watches isAuthenticated and navigates via React Router.
+// NO page reloads. signIn sets state + navigates directly.
+// Debug logging on every step.
 // ═══════════════════════════════════════════════════════════════
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { User, AuthError } from '@supabase/supabase-js';
 import { supabase, isAdminEmail } from '@/lib/supabase/client';
 import type { UserRole } from '@/lib/supabase/client';
 
-interface AuthState {
+interface AuthContextType {
   user: User | null;
   role: UserRole;
   isLoading: boolean;
   isAuthenticated: boolean;
-}
-
-interface AuthContextType extends AuthState {
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null; role?: UserRole }>;
   signUp: (email: string, password: string, metadata?: { full_name?: string }) => Promise<{ error: AuthError | null; role?: UserRole }>;
   signInWithOAuth: (provider: 'google' | 'github') => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<{ error: AuthError | null }>;
+  debugLog: string[];
 }
 
 function resolveRole(user: User | null): UserRole {
@@ -37,137 +35,147 @@ const AuthContext = createContext<AuthContextType>({
   signInWithOAuth: async () => ({ error: null }),
   signOut: async () => {},
   sendPasswordReset: async () => ({ error: null }),
+  debugLog: [],
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    role: 'public',
-    isLoading: true,
-    isAuthenticated: false,
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<UserRole>('public');
+  const [isLoading, setIsLoading] = useState(true);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const mountedRef = useRef(true);
 
-  // ── Initialize: check for existing session on mount ──
+  const log = useCallback((msg: string) => {
+    console.log(msg);
+    setDebugLog(prev => [...prev.slice(-19), msg]);
+  }, []);
+
+  // ── Initialize: check existing session ──
   useEffect(() => {
-    let mounted = true;
+    mountedRef.current = true;
 
     async function init() {
+      log('[Auth] init() starting...');
       try {
-        console.log('[Auth] init() — calling getSession()...');
         const { data: { session }, error } = await supabase.auth.getSession();
-        if (!mounted) return;
+        if (!mountedRef.current) return;
 
         if (error) {
-          console.error('[Auth] getSession error:', error.message);
-          setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+          log('[Auth] getSession ERROR: ' + error.message);
+          setIsLoading(false);
           return;
         }
 
         if (session?.user) {
-          const role = resolveRole(session.user);
-          console.log('[Auth] Session found:', session.user.email, 'role:', role);
-          setState({ user: session.user, role, isLoading: false, isAuthenticated: true });
+          const r = resolveRole(session.user);
+          log('[Auth] Session FOUND: ' + session.user.email + ' role=' + r);
+          setUser(session.user);
+          setRole(r);
+          setIsLoading(false);
         } else {
-          console.log('[Auth] No session');
-          setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
+          log('[Auth] No session');
+          setIsLoading(false);
         }
       } catch (err: any) {
-        console.error('[Auth] init exception:', err?.message);
-        if (mounted) {
-          setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
-        }
+        log('[Auth] init EXCEPTION: ' + (err?.message || String(err)));
+        setIsLoading(false);
       }
     }
 
     init();
 
-    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return;
-      const user = session?.user ?? null;
-      const role = resolveRole(user);
-      console.log('[Auth] onAuthStateChange:', event, 'email:', user?.email, 'role:', role);
-      setState({ user, role, isLoading: false, isAuthenticated: !!user });
+      if (!mountedRef.current) return;
+      const u = session?.user ?? null;
+      const r = resolveRole(u);
+      log('[Auth] onAuthStateChange: event=' + event + ' email=' + (u?.email || 'null') + ' role=' + r);
+      setUser(u);
+      setRole(r);
+      setIsLoading(false);
     });
 
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
+    return () => { mountedRef.current = false; subscription.unsubscribe(); };
+  }, [log]);
 
-  // ── Sign In — returns result, NO redirect (caller handles navigation) ──
+  // ── Sign In — sets state DIRECTLY, returns role for caller to navigate ──
   const signIn = useCallback(async (email: string, password: string) => {
-    console.log('[Auth] signIn:', email);
+    log('[Auth] signIn() calling: ' + email);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        const msg = error.message.includes('Invalid login credentials')
-          ? 'Invalid email or password.'
-          : error.message;
+        log('[Auth] signInWithPassword ERROR: ' + error.message);
+        const msg = error.message.includes('Invalid login') ? 'Invalid email or password.' : error.message;
         return { error: { ...error, message: msg } as AuthError };
       }
 
       if (!data.session?.user) {
+        log('[Auth] signInWithPassword returned NO session');
         return { error: { message: 'No session.', name: 'AuthError', status: 400 } as AuthError };
       }
 
-      const role = resolveRole(data.session.user);
-      console.log('[Auth] Sign in success:', data.session.user.email, 'role:', role);
-      // onAuthStateChange will update React state
-      // LoginPage watches isAuthenticated and navigates
-      return { error: null, role };
+      const r = resolveRole(data.session.user);
+      log('[Auth] signIn SUCCESS: ' + data.session.user.email + ' role=' + r);
+
+      // Set state DIRECTLY (don't wait for onAuthStateChange)
+      setUser(data.session.user);
+      setRole(r);
+      setIsLoading(false);
+
+      return { error: null, role: r };
     } catch (err: any) {
-      console.error('[Auth] signIn exception:', err?.message);
-      return { error: { message: err?.message || 'Failed.', name: 'AuthError', status: 500 } as AuthError };
+      log('[Auth] signIn EXCEPTION: ' + (err?.message || String(err)));
+      return { error: { message: err?.message || 'Failed', name: 'AuthError', status: 500 } as AuthError };
     }
-  }, []);
+  }, [log]);
 
   // ── Sign Up ──
   const signUp = useCallback(async (email: string, password: string, metadata?: { full_name?: string }) => {
-    console.log('[Auth] signUp:', email);
+    log('[Auth] signUp(): ' + email);
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email, password,
-        options: { data: metadata, emailRedirectTo: `${window.location.origin}/#/login` },
-      });
-      if (error) return { error };
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: metadata, emailRedirectTo: window.location.origin + '/#/login' } });
+      if (error) { log('[Auth] signUp ERROR: ' + error.message); return { error }; }
       if (data.session?.user) {
-        return { error: null, role: resolveRole(data.session.user) };
+        const r = resolveRole(data.session.user);
+        setUser(data.session.user); setRole(r); setIsLoading(false);
+        return { error: null, role: r };
       }
       return { error: null };
     } catch (err: any) {
-      return { error: { message: err?.message || 'Failed.', name: 'AuthError', status: 500 } as AuthError };
+      return { error: { message: err?.message || 'Failed', name: 'AuthError', status: 500 } as AuthError };
     }
-  }, []);
+  }, [log]);
 
-  // ── OAuth — browser redirects to provider, no return ──
+  // ── OAuth ──
   const signInWithOAuth = useCallback(async (provider: 'google' | 'github') => {
-    console.log('[Auth] OAuth:', provider);
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: `${window.location.origin}/#/auth/callback` },
-    });
-    if (error) return { error: { ...error, message: error.message || `${provider} failed` } as AuthError };
+    log('[Auth] OAuth: ' + provider);
+    const { data, error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin + '/#/auth/callback' } });
+    if (error) return { error: { ...error, message: error.message || provider + ' failed' } as AuthError };
     if (data?.url) window.location.href = data.url;
     return { error: null };
-  }, []);
+  }, [log]);
 
   // ── Sign Out ──
   const signOut = useCallback(async () => {
-    console.log('[Auth] signOut');
+    log('[Auth] signOut()');
     await supabase.auth.signOut();
-    setState({ user: null, role: 'public', isLoading: false, isAuthenticated: false });
-  }, []);
+    setUser(null); setRole('public'); setIsLoading(false);
+  }, [log]);
 
   // ── Password Reset ──
   const sendPasswordReset = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/#/reset-password`,
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/#/reset-password',
+      });
+      return { error };
+    } catch (err: any) {
+      return { error: { message: err?.message, name: 'AuthError', status: 500 } as AuthError };
+    }
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, signIn, signUp, signInWithOAuth, signOut, sendPasswordReset }}>
+    <AuthContext.Provider value={{ user, role, isLoading, isAuthenticated: !!user, signIn, signUp, signInWithOAuth, signOut, sendPasswordReset, debugLog }}>
       {children}
     </AuthContext.Provider>
   );
