@@ -1,13 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
-// APP — Single Routes, all routes use full paths
-// / = landing, /login = login, /hq/* = HQ portal, /customer/* = customer, etc.
-// No portal switching — React Router handles everything.
+// APP — Unified Routes for v2.2
+// All routes use CyberLayout with unified design system
 // ═══════════════════════════════════════════════════════════════
 
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { LoadingScreen } from '@/components/LoadingScreen';
-import { PortalLayout } from '@/layouts/PortalLayout';
+import CyberLayout from '@/layouts/CyberLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 // ── Public pages ──
@@ -22,7 +21,7 @@ const EmergencyPage    = lazy(() => import('@/pages/public/EmergencyPage').then(
 const StatusPage       = lazy(() => import('@/pages/public/StatusPage').then(m => ({ default: m.StatusPage })));
 const EngineerOnboard  = lazy(() => import('@/pages/engineer/EngineerOnboarding').then(m => ({ default: m.EngineerOnboarding })));
 
-// ── HQ pages ──
+// ── HQ pages (Interface C) ──
 const HQDashboard      = lazy(() => import('@/pages/hq/HQDashboard').then(m => ({ default: m.HQDashboard })));
 const HQIncidents      = lazy(() => import('@/pages/hq/HQIncidents').then(m => ({ default: m.HQIncidents })));
 const HQApprovals      = lazy(() => import('@/pages/hq/HQApprovals').then(m => ({ default: m.HQApprovals })));
@@ -34,7 +33,7 @@ const HQScanners       = lazy(() => import('@/pages/hq/HQScanners').then(m => ({
 const HQGuidelines     = lazy(() => import('@/pages/hq/HQGuidelines').then(m => ({ default: m.HQGuidelines })));
 const HQSettings       = lazy(() => import('@/pages/hq/HQSettings').then(m => ({ default: m.HQSettings })));
 
-// ── Customer pages ──
+// ── Customer pages (Interface A) ──
 const CustomerDashboard = lazy(() => import('@/pages/customer/CustomerDashboard').then(m => ({ default: m.CustomerDashboard })));
 const CustomerIncidents = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
 const CustomerBilling   = lazy(() => import('@/pages/customer/CustomerBilling').then(m => ({ default: m.CustomerBilling })));
@@ -43,7 +42,7 @@ const CustomerComms     = lazy(() => import('@/pages/customer/CustomerComms').th
 const CustomerSecurity  = lazy(() => import('@/pages/customer/CustomerSecurity').then(m => ({ default: m.CustomerSecurity })));
 const CustomerSettings  = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
 
-// ── Engineer pages ──
+// ── Engineer pages (Interface B) ──
 const EngineerDashboard = lazy(() => import('@/pages/engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
 const EngineerSessions  = lazy(() => import('@/pages/engineer/EngineerSessions').then(m => ({ default: m.EngineerSessions })));
 const EngineerWorkspace = lazy(() => import('@/pages/engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
@@ -69,8 +68,8 @@ export default function App() {
         <Route path="/status" element={<StatusPage />} />
         <Route path="/engineer/onboard" element={<EngineerOnboard />} />
 
-        {/* ═══ HQ PORTAL (/hq/*) ═══ */}
-        <Route element={<PortalLayout portalType="admin" />}>
+        {/* ═══ HQ PORTAL (Interface C) ═══ */}
+        <Route element={<CyberLayout portalType="admin" />}>
           <Route path="/hq" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQDashboard /></ProtectedRoute>} />
           <Route path="/hq/incidents" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQIncidents /></ProtectedRoute>} />
           <Route path="/hq/approvals" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQApprovals /></ProtectedRoute>} />
@@ -83,30 +82,30 @@ export default function App() {
           <Route path="/hq/settings" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQSettings /></ProtectedRoute>} />
         </Route>
 
-        {/* ═══ CUSTOMER PORTAL (/customer/*) ═══ */}
-        <Route element={<PortalLayout portalType="customer" />}>
-          <Route path="/customer" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerDashboard /></ProtectedRoute>} />
-          <Route path="/customer/incidents" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerIncidents /></ProtectedRoute>} />
-          <Route path="/customer/billing" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerBilling /></ProtectedRoute>} />
-          <Route path="/customer/vault" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerVault /></ProtectedRoute>} />
-          <Route path="/customer/comms" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerComms /></ProtectedRoute>} />
-          <Route path="/customer/security" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerSecurity /></ProtectedRoute>} />
-          <Route path="/customer/settings" element={<ProtectedRoute allowedRoles={['customer', 'admin']}><CustomerSettings /></ProtectedRoute>} />
+        {/* ═══ CUSTOMER PORTAL (Interface A) ═══ */}
+        <Route element={<CyberLayout portalType="customer" />}>
+          <Route path="/customer" element={<ProtectedRoute allowedRoles={['customer']}><CustomerDashboard /></ProtectedRoute>} />
+          <Route path="/customer/incidents" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
+          <Route path="/customer/billing" element={<ProtectedRoute allowedRoles={['customer']}><CustomerBilling /></ProtectedRoute>} />
+          <Route path="/customer/vault" element={<ProtectedRoute allowedRoles={['customer']}><CustomerVault /></ProtectedRoute>} />
+          <Route path="/customer/comms" element={<ProtectedRoute allowedRoles={['customer']}><CustomerComms /></ProtectedRoute>} />
+          <Route path="/customer/security" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSecurity /></ProtectedRoute>} />
+          <Route path="/customer/settings" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSettings /></ProtectedRoute>} />
         </Route>
 
-        {/* ═══ ENGINEER PORTAL (/engineer/*) ═══ */}
-        <Route element={<PortalLayout portalType="engineer" />}>
-          <Route path="/engineer" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerDashboard /></ProtectedRoute>} />
-          <Route path="/engineer/sessions" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerSessions /></ProtectedRoute>} />
-          <Route path="/engineer/workspace/:incidentId" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerWorkspace /></ProtectedRoute>} />
-          <Route path="/engineer/incident/:incidentId" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><IncidentWorkspace /></ProtectedRoute>} />
-          <Route path="/engineer/audit" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerAudit /></ProtectedRoute>} />
-          <Route path="/engineer/oncall" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerOnCall /></ProtectedRoute>} />
-          <Route path="/engineer/security" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerSecurity /></ProtectedRoute>} />
-          <Route path="/engineer/settings" element={<ProtectedRoute allowedRoles={['engineer', 'admin']}><EngineerSettings /></ProtectedRoute>} />
+        {/* ═══ ENGINEER PORTAL (Interface B) ═══ */}
+        <Route element={<CyberLayout portalType="engineer" />}>
+          <Route path="/engineer" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerDashboard /></ProtectedRoute>} />
+          <Route path="/engineer/sessions" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSessions /></ProtectedRoute>} />
+          <Route path="/engineer/workspace" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerWorkspace /></ProtectedRoute>} />
+          <Route path="/engineer/workspace/:incidentId" element={<ProtectedRoute allowedRoles={['engineer']}><IncidentWorkspace /></ProtectedRoute>} />
+          <Route path="/engineer/audit" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerAudit /></ProtectedRoute>} />
+          <Route path="/engineer/oncall" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerOnCall /></ProtectedRoute>} />
+          <Route path="/engineer/security" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSecurity /></ProtectedRoute>} />
+          <Route path="/engineer/settings" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSettings /></ProtectedRoute>} />
         </Route>
 
-        {/* ═══ CATCH-ALL ═══ */}
+        {/* ═══ Fallback ═══ */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
