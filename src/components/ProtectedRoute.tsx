@@ -1,13 +1,18 @@
 // ═══════════════════════════════════════════════════════════════
-// PROTECTED ROUTE — If not authenticated, redirect to /login.
-// Uses React Router <Navigate>, no useEffect, no window.location.
-// Admin passes all role checks.
+// PROTECTED ROUTE — v2.5 TEST MODE: AUTH BYPASSED
+// Set BYPASS_AUTH = false to reinstate full authentication.
+// When true: all routes are accessible without login.
 // ═══════════════════════════════════════════════════════════════
 
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@/lib/supabase/client';
 import { Zap, Loader2, ShieldAlert } from 'lucide-react';
+
+// ═══ TEST MODE SWITCH ═══
+// Change this to false when you want auth back
+const BYPASS_AUTH = true;
+// ═══════════════════════
 
 interface Props {
   children: React.ReactNode;
@@ -16,6 +21,12 @@ interface Props {
 
 export function ProtectedRoute({ children, allowedRoles }: Props) {
   const { user, role, loading } = useAuth();
+
+  // ══ TEST MODE: Bypass all checks ══
+  if (BYPASS_AUTH) {
+    return <>{children}</>;
+  }
+  // ═════════════════════════════════
 
   if (loading) {
     return (

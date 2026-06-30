@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
 import {
   LayoutDashboard, AlertTriangle,
-  MessageSquare, Settings, LogOut, Zap, Terminal,
+  MessageSquare, Settings, LogOut, Zap, Terminal, CreditCard,
   Users, CheckSquare, ClipboardList, ChevronLeft,
   ChevronRight, ScanLine, ShieldCheck, Wifi, WifiOff,
   ChevronDown, User, Bell, ShieldAlert, HardHat,
@@ -27,10 +27,10 @@ interface NavItem {
 const NAV_CONFIG: Record<string, NavItem[]> = {
   customer: [
     { label: 'Dashboard', path: '/customer', icon: LayoutDashboard },
-    { label: 'Incidents', path: '/customer/incidents', icon: AlertTriangle },
-    { label: 'Security', path: '/customer/security', icon: ShieldCheck },
+    { label: 'Incidents', path: '/customer/incidents', icon: AlertTriangle, badge: 3 },
     { label: 'Vault', path: '/customer/vault', icon: Lock },
-    { label: 'Messages', path: '/customer/comms', icon: MessageSquare },
+    { label: 'Security', path: '/customer/security', icon: ShieldCheck },
+    { label: 'Billing', path: '/customer/billing', icon: CreditCard },
     { label: 'Settings', path: '/customer/settings', icon: Settings },
   ],
   engineer: [

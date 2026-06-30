@@ -38,7 +38,7 @@ const CustomerDashboard = lazy(() => import('@/pages/customer/CustomerDashboard'
 const CustomerIncidents = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
 const CustomerBilling   = lazy(() => import('@/pages/customer/CustomerBilling').then(m => ({ default: m.CustomerBilling })));
 const CustomerVault     = lazy(() => import('@/pages/customer/CustomerVault').then(m => ({ default: m.CustomerVault })));
-const CustomerComms     = lazy(() => import('@/pages/customer/CustomerComms').then(m => ({ default: m.CustomerComms })));
+const CustomerOnboarding = lazy(() => import('@/pages/customer/CustomerOnboarding').then(m => ({ default: m.CustomerOnboarding })));
 const CustomerSecurity  = lazy(() => import('@/pages/customer/CustomerSecurity').then(m => ({ default: m.CustomerSecurity })));
 const CustomerSettings  = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
 
@@ -86,11 +86,11 @@ export default function App() {
 
         {/* ═══ CUSTOMER PORTAL (Interface A) ═══ */}
         <Route element={<CyberLayout portalType="customer" />}>
+          <Route path="/customer/onboard" element={<ProtectedRoute allowedRoles={['customer']}><CustomerOnboarding /></ProtectedRoute>} />
           <Route path="/customer" element={<ProtectedRoute allowedRoles={['customer']}><CustomerDashboard /></ProtectedRoute>} />
           <Route path="/customer/incidents" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
           <Route path="/customer/billing" element={<ProtectedRoute allowedRoles={['customer']}><CustomerBilling /></ProtectedRoute>} />
           <Route path="/customer/vault" element={<ProtectedRoute allowedRoles={['customer']}><CustomerVault /></ProtectedRoute>} />
-          <Route path="/customer/comms" element={<ProtectedRoute allowedRoles={['customer']}><CustomerComms /></ProtectedRoute>} />
           <Route path="/customer/security" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSecurity /></ProtectedRoute>} />
           <Route path="/customer/settings" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSettings /></ProtectedRoute>} />
         </Route>
