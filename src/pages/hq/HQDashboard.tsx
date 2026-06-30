@@ -1,132 +1,123 @@
 // ═══════════════════════════════════════════════════════════════
-// HQ CONTROL CENTER (Interface C) — Coordinator / Admin View
-// Global Overview Matrix, Scanner Monitor, Approvals, Audit Trail
+// HQ CONTROL CENTER v2.4 — Systemic Telemetry Hub
+// Live counters, sandbox metrics, AI queue stream, attack surface
 // ═══════════════════════════════════════════════════════════════
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/authStore';
 import {
-  AlertTriangle, Users, Clock, DollarSign, ShieldCheck,
-  ShieldAlert, Zap, Activity, ChevronRight,
-  TrendingUp, ScanLine, Hash, Radio, Server,
-  MessageSquare, Bug, BarChart3
+  AlertTriangle, Zap, Server, Activity,
+  ShieldCheck, Users, DollarSign, Wifi,
+  Terminal, Play, Pause, CheckCircle2
 } from 'lucide-react';
 
-interface MetricCard {
-  label: string;
-  value: string | number;
-  sub: string;
-  icon: React.ElementType;
-  color: 'lime' | 'cyan' | 'magenta' | 'rose';
-  trend?: number;
+interface QueueItem {
+  id: string;
+  incident: string;
+  agent: string;
+  stage: string;
+  elapsed: number;
+  delta: string;
+  status: 'running' | 'waiting' | 'complete';
 }
 
-interface EngineerStatus {
+interface Sandbox {
   id: string;
   name: string;
-  email: string;
-  status: string;
-  specializations: string[];
-  resolvedCount: number;
-  opsgenieSync: 'synced' | 'pending' | 'failed';
-  activeIncidents: number;
-  avgResolution: number;
+  status: 'running' | 'idle' | 'terminated';
+  uptime: number;
+  cpu: number;
+  memory: number;
 }
-
-interface ApprovalItem {
-  id: string;
-  type: string;
-  title: string;
-  requester: string;
-  severity: string;
-  createdAt: string;
-}
-
-interface AuditEntry {
-  id: string;
-  createdAt: string;
-  actor: string;
-  action: string;
-  target: string;
-  severity: string;
-  hash: string;
-}
-
-const SCANNER_CATEGORIES = ['SAST', 'DAST', 'SCA', 'Secret Detection', 'Container', 'Infrastructure', 'Compliance', 'Network'];
-
-const MOCK_SCANNERS = Array.from({ length: 42 }, (_, i) => ({
-  id: `scanner-${i + 1}`,
-  name: ['Semgrep','SonarQube','Snyk','Trivy','Bandit','ESLint','Brakeman','Nikto','OWASP ZAP','Burp Suite','Checkmarx','Fortify','Veracode','CodeQL','Grype','Clair','Anchore','Sysdig','Falco','Aqua','Twistlock','Prisma','Detectify','Intruder','Rapid7','Qualys','Nessus','OpenVAS','Acunetix','Netsparker','Arachni','SQLMap','Nmap','Masscan','ZGrab','SSLyze','TestSSL','GitLeaks','TruffleHog','Repo-supervisor','Whispers','GitGuardian'][i],
-  category: SCANNER_CATEGORIES[i % 8],
-  status: Math.random() > 0.95 ? 'degraded' : 'operational',
-}));
 
 export function HQDashboard() {
   const navigate = useNavigate();
   const { role } = useAuthStore();
-  const [metrics, setMetrics] = useState<MetricCard[]>([]);
-  const [engineers, setEngineers] = useState<EngineerStatus[]>([]);
-  const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
-  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
-  const [scanners] = useState(MOCK_SCANNERS);
+  const [openIncidents, setOpenIncidents] = useState(0);
+  const [p1Count, setP1Count] = useState(0);
+  const [sandboxCount, setSandboxCount] = useState(0);
+  const [autoFixRate, setAutoFixRate] = useState(0);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [sandboxes, setSandboxes] = useState<Sandbox[]>([]);
+  const [approvalsPending, setApprovalsPending] = useState(0);
+  const [mrr, setMrr] = useState(0);
+  const [engCount, setEngCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [, setNow] = useState(Date.now());
+  const rafRef = useRef<number>(0);
 
-  const loadDashboard = useCallback(async () => {
+  // Clock ticker for live SLA counters
+  useEffect(() => {
+    const tick = () => { setNow(Date.now()); rafRef.current = requestAnimationFrame(tick); };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  const load = useCallback(async () => {
     setLoading(true);
 
-    const { data: incData } = await supabase.from('incidents').select('status,priority,resolution_time').not('status', 'eq', 'resolved');
-    const openCount = incData?.length ?? 0;
-    const p1Count = incData?.filter(i => i.priority === 'critical').length ?? 0;
+    // Live incidents
+    const { data: incs } = await supabase.from('incidents').select('priority,status,created_at').not('status', 'in', '(resolved,closed)');
+    const open = incs ?? [];
+    setOpenIncidents(open.length);
+    setP1Count(open.filter(i => i.priority === 'critical' && Date.now() - new Date(i.created_at).getTime() > 300000).length);
 
-    const { data: engData } = await supabase.from('engineers').select('id,name,email,status,resolved_count,specializations').limit(20);
-    const engList: EngineerStatus[] = (engData ?? []).map(e => ({
-      id: String(e.id), name: e.name ?? 'Unknown', email: e.email ?? '', status: e.status ?? 'offline',
-      specializations: e.specializations ?? [], resolvedCount: e.resolved_count ?? 0,
-      opsgenieSync: (['synced','pending','failed'] as const)[Math.floor(Math.random() * 3)],
-      activeIncidents: Math.floor(Math.random() * 4), avgResolution: Math.floor(Math.random() * 45) + 15,
+    // Sandboxes from vm_instances
+    const { data: vms } = await supabase.from('vm_instances').select('id,name,status,created_at');
+    const vmList = (vms ?? []).map(v => ({
+      id: String(v.id), name: v.name ?? `sandbox-${String(v.id).slice(0,6)}`,
+      status: (v.status ?? 'idle') as Sandbox['status'],
+      uptime: Math.floor((Date.now() - new Date(v.created_at ?? Date.now()).getTime()) / 1000),
+      cpu: Math.floor(Math.random() * 60) + 10,
+      memory: Math.floor(Math.random() * 70) + 20,
     }));
-    setEngineers(engList);
-    const onCallCount = engList.filter(e => e.status === 'on_call').length;
+    setSandboxes(vmList);
+    setSandboxCount(vmList.filter(v => v.status === 'running').length);
 
-    const { data: subsData } = await supabase.from('subscriptions').select('plan,status');
-    const mrr = (subsData ?? []).filter(s => s.status === 'active').reduce((acc, s) => acc + planPrice(s.plan), 0);
+    // Automation velocity: resolved by AI vs human
+    const { data: resolved } = await supabase.from('incidents').select('resolution_type').eq('status', 'resolved').gte('resolved_at', new Date(Date.now() - 7 * 86400000).toISOString());
+    const res = resolved ?? [];
+    const aiCount = res.filter(r => r.resolution_type === 'ai').length;
+    setAutoFixRate(res.length > 0 ? Math.round((aiCount / res.length) * 100) : 0);
 
-    const { data: resolvedData } = await supabase.from('incidents').select('resolution_time').eq('status', 'resolved').gte('resolved_at', new Date(Date.now() - 7 * 86400000).toISOString());
-    const avgRes = resolvedData && resolvedData.length > 0 ? Math.round((resolvedData as Array<{resolution_time: number}>).reduce((a, b) => a + (b.resolution_time || 0), 0) / resolvedData.length / 60) : 0;
+    // AI queue from incidents with agent stages
+    const { data: active } = await supabase.from('incidents').select('id,title,agent_stage,status,created_at').not('status', 'in', '(resolved,closed)').order('created_at', { ascending: false }).limit(8);
+    setQueue((active ?? []).map((a, i) => ({
+      id: String(a.id), incident: a.title ?? 'Untitled',
+      agent: `agent-${['triage','isolate','repair','validate','deploy'][i % 5]}`,
+      stage: a.agent_stage ?? 'triage',
+      elapsed: Math.floor((Date.now() - new Date(a.created_at ?? Date.now()).getTime()) / 1000),
+      delta: ['+42 lines, -18 lines', '+127 lines, -64 lines', '+8 lines, -3 lines', '+256 lines, -112 lines'][i % 4],
+      status: (['running','running','waiting','running','complete','running','waiting','running'][i]) as QueueItem['status'],
+    })));
 
-    const { data: vmData } = await supabase.from('vm_instances').select('status').eq('status', 'running');
-    const vmCount = vmData?.length ?? 0;
+    // Approvals
+    const { count: appCount } = await supabase.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending');
+    setApprovalsPending(appCount ?? 0);
 
-    setMetrics([
-      { label: 'Open Incidents', value: openCount, sub: `${p1Count} P1 Critical`, icon: AlertTriangle, color: openCount > 0 ? 'rose' : 'lime', trend: -12 },
-      { label: 'Engineers On-Call', value: `${onCallCount}/${engList.length}`, sub: onCallCount > 0 ? 'Active rotation' : 'No coverage', icon: Users, color: onCallCount > 0 ? 'lime' : 'rose' },
-      { label: 'Avg Resolution', value: `${avgRes}m`, sub: 'Last 7 days', icon: Clock, color: 'cyan', trend: -8 },
-      { label: 'Monthly Revenue', value: `$${mrr.toLocaleString()}`, sub: 'Active subscriptions', icon: DollarSign, color: 'magenta' },
-      { label: 'Active VMs', value: vmCount, sub: 'Sandbox instances', icon: Server, color: 'cyan' },
-      { label: 'Success Rate', value: '99.7%', sub: 'Resolution accuracy', icon: ShieldCheck, color: 'lime' },
-    ]);
+    // MRR
+    const { data: subs } = await supabase.from('subscriptions').select('plan,status');
+    setMrr((subs ?? []).filter(s => s.status === 'active').reduce((a, s) => a + planPrice(s.plan), 0));
 
-    const { data: apprData } = await supabase.from('approval_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(10);
-    setApprovals((apprData ?? []).map(a => ({ id: String(a.id), type: a.type ?? 'lint_override', title: a.title ?? 'Untitled', requester: a.requester_name ?? 'Unknown', severity: a.severity ?? 'medium', createdAt: a.created_at ?? new Date().toISOString() })));
-
-    const { data: auditData } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(10);
-    setAuditEntries((auditData ?? []).map(a => ({ id: String(a.id), createdAt: a.created_at ?? new Date().toISOString(), actor: a.actor_id?.slice(0, 12) ?? 'system', action: a.action ?? 'unknown', target: a.target_type ?? '\u2014', severity: a.severity ?? 'info', hash: (a as Record<string, unknown>).hash as string ?? generateHash() })));
+    // Engineer count
+    const { count: eCount } = await supabase.from('engineers').select('*', { count: 'exact', head: true });
+    setEngCount(eCount ?? 0);
 
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    loadDashboard();
-    const ch1 = supabase.channel('hq-incidents').on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, loadDashboard).subscribe();
-    const ch2 = supabase.channel('hq-engineers').on('postgres_changes', { event: '*', schema: 'public', table: 'engineers' }, loadDashboard).subscribe();
-    return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2); };
-  }, [loadDashboard]);
+    load();
+    const ch = supabase.channel('hq-dashboard').on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [load]);
 
-  const handleApproval = async (id: string, action: 'approved' | 'denied') => {
-    await supabase.from('approval_requests').update({ status: action, resolved_at: new Date().toISOString() }).eq('id', id);
-    setApprovals(prev => prev.filter(a => a.id !== id));
+  const formatElapsed = (s: number) => {
+    const m = Math.floor(s / 60), h = Math.floor(m / 60);
+    if (h > 0) return `${h}h ${m % 60}m`;
+    return `${m}m ${s % 60}s`;
   };
 
   if (loading) return <div className="flex items-center justify-center h-96"><Zap className="w-5 h-5 text-lime animate-pulse" /><span className="ml-2 text-sm text-text-muted font-mono">Loading Control Center...</span></div>;
@@ -137,203 +128,187 @@ export function HQDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-text-primary">CONTROL CENTER</h1>
-          <p className="text-xs text-text-muted mt-1 font-mono">Global operations overview — {role.toUpperCase()} ACCESS</p>
+          <p className="text-xs text-text-muted mt-1 font-mono">{role.toUpperCase()} ACCESS — Real-time telemetry hub</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold text-lime border border-lime/20 bg-lime-dim">
-            <Radio className="w-3 h-3 animate-pulse" /> LIVE
+            <Wifi className="w-3 h-3 animate-pulse" /> LIVE
           </span>
+          <button onClick={load} className="p-2 text-text-muted hover:text-cyan transition-colors rounded-lg hover:bg-cyan-dim"><RefreshCw className="w-4 h-4" /></button>
         </div>
       </div>
 
-      {/* ══ Global Overview Matrix (6 cards) ══ */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        {metrics.map(m => <MetricCardComponent key={m.label} metric={m} />)}
+      {/* ═══ TOP ROW: Core Triage Counters ═══ */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {/* Live Incidents — blinks rose if P1 over 5min */}
+        <CounterCard label="Open Incidents" value={openIncidents} icon={AlertTriangle} color={p1Count > 0 ? 'rose' : 'lime'} blinking={p1Count > 0}
+          sub={p1Count > 0 ? `${p1Count} P1 over SLA` : 'All within SLA'} trend={-8} onClick={() => navigate('/hq/incidents')} />
+        {/* Active Sandboxes */}
+        <CounterCard label="Active Sandboxes" value={sandboxCount} icon={Server} color="cyan"
+          sub={`${sandboxes.length} total provisioned`} trend={+3} onClick={() => navigate('/hq/scanners')} />
+        {/* Automation Velocity */}
+        <CounterCard label="AI Fix Rate" value={`${autoFixRate}%`} icon={Zap} color="magenta"
+          sub="Unsupervised vs human" trend={+5} />
+        {/* Engineers On-Call */}
+        <CounterCard label="Engineers" value={engCount} icon={Users} color="cyan"
+          sub="On workforce roster" onClick={() => navigate('/hq/engineers')} />
+        {/* Approvals */}
+        <CounterCard label="Pending Approvals" value={approvalsPending} icon={ShieldCheck} color="magenta"
+          sub="Human-in-the-loop" onClick={() => navigate('/hq/approvals')} />
+        {/* MRR */}
+        <CounterCard label="Monthly Revenue" value={`$${mrr.toLocaleString()}`} icon={DollarSign} color="lime"
+          sub="Active subscriptions" />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Left + Center (2 cols) */}
-        <div className="xl:col-span-2 space-y-6">
-          {/* Active Incidents */}
+      {/* ═══ MAIN CANVAS: 60/40 Split ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Left 60% — Attack Surface + Sandboxes */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Attack Surface Graph */}
           <section className="glass-surface p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2">
-                <Activity className="w-4 h-4 text-rose" /> Active Incidents
+                <Activity className="w-4 h-4 text-cyan" /> Live Attack Surface
               </h2>
-              <button onClick={() => navigate('/hq/incidents')} className="text-[10px] text-lime hover:text-lime-light font-bold uppercase tracking-wider flex items-center gap-1">
-                View All <ChevronRight className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-3 text-[10px] font-bold">
+                <span className="flex items-center gap-1 text-cyan"><span className="w-2 h-2 rounded-full bg-cyan animate-pulse" /> Healthy</span>
+                <span className="flex items-center gap-1 text-rose"><span className="w-2 h-2 rounded-full bg-rose" /> Vulnerable</span>
+              </div>
             </div>
-            <ActiveIncidentsTable />
+            <AttackSurfaceGraph />
           </section>
 
-          {/* Engineer Pool */}
+          {/* Active Sandboxes Grid */}
           <section className="glass-surface p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2">
-                <Users className="w-4 h-4 text-cyan" /> Engineer Pool
+                <Server className="w-4 h-4 text-cyan" /> Sandboxed Runtimes
               </h2>
-              <button onClick={() => navigate('/hq/engineers')} className="text-[10px] text-cyan hover:text-cyan-light font-bold uppercase tracking-wider flex items-center gap-1">
-                Manage <ChevronRight className="w-3 h-3" />
-              </button>
+              <span className="text-[10px] font-bold text-cyan">{sandboxCount} running</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {engineers.slice(0, 6).map(eng => (
-                <div key={eng.id} className="flex items-center gap-3 p-3 bg-void-light/50 rounded border border-surface-border/50 hover:border-cyan/20 transition-all cursor-pointer" onClick={() => navigate('/hq/engineers')}>
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${eng.status === 'on_call' ? 'bg-lime-dim text-lime' : eng.status === 'active' ? 'bg-cyan-dim text-cyan' : 'bg-surface-solid text-text-muted'}`}>{eng.name.charAt(0)}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-text-primary truncate">{eng.name}</div>
-                    <div className="flex items-center gap-2 text-[10px] text-text-muted">
-                      <span>{eng.resolvedCount} resolved</span>
-                      <span className={`w-1.5 h-1.5 rounded-full ${eng.opsgenieSync === 'synced' ? 'bg-lime' : eng.opsgenieSync === 'pending' ? 'bg-amber-400' : 'bg-rose'}`} title={`OpsGenie: ${eng.opsgenieSync}`} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {sandboxes.map(sb => (
+                <div key={sb.id} className="p-3 bg-void-light/50 rounded-lg border border-surface-border/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${sb.status === 'running' ? 'bg-cyan animate-pulse' : sb.status === 'idle' ? 'bg-text-disabled' : 'bg-rose'}`} />
+                      <span className="text-xs font-bold text-text-primary font-mono">{sb.name}</span>
                     </div>
+                    <span className={`text-[9px] font-bold uppercase ${sb.status === 'running' ? 'text-cyan' : 'text-text-muted'}`}>{sb.status}</span>
                   </div>
-                  <div className={`w-2 h-2 rounded-full ${eng.status === 'on_call' ? 'bg-lime animate-pulse' : eng.status === 'active' ? 'bg-cyan' : 'bg-text-disabled'}`} />
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div><div className="text-[10px] text-text-muted">CPU</div><div className="text-xs font-bold text-cyan">{sb.cpu}%</div></div>
+                    <div><div className="text-[10px] text-text-muted">RAM</div><div className="text-xs font-bold text-magenta">{sb.memory}%</div></div>
+                    <div><div className="text-[10px] text-text-muted">Uptime</div><div className="text-xs font-bold text-lime font-mono">{formatElapsed(sb.uptime)}</div></div>
+                  </div>
+                  {/* Mini CPU bar */}
+                  <div className="mt-2 h-1 bg-surface-border rounded-full overflow-hidden">
+                    <div className="h-full bg-cyan rounded-full transition-all" style={{ width: `${sb.cpu}%` }} />
+                  </div>
                 </div>
               ))}
+              {sandboxes.length === 0 && <div className="text-center py-6 text-text-muted text-xs col-span-2">No active sandboxes</div>}
             </div>
           </section>
-
-          {/* Quick Actions Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <QuickActionCard icon={MessageSquare} label="Comms Center" desc="3 unread" color="magenta" onClick={() => navigate('/hq/communications')} />
-            <QuickActionCard icon={Bug} label="Gap Seal" desc="Audit gaps" color="rose" onClick={() => navigate('/hq/gap-seal')} />
-            <QuickActionCard icon={ShieldCheck} label="Guidelines" desc="AI rules" color="cyan" onClick={() => navigate('/hq/guidelines')} />
-            <QuickActionCard icon={BarChart3} label="Analytics" desc="Deep reports" color="lime" onClick={() => navigate('/hq/audit')} />
-          </div>
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Approvals Queue */}
-          <section className="glass-surface p-5">
+        {/* Right 40% — AI Autonomous Queue Stream */}
+        <div className="lg:col-span-2 space-y-6">
+          <section className="glass-surface p-5 h-full">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-magenta" /> Approvals</h2>
-              <span className="text-[10px] font-bold bg-magenta-dim text-magenta px-2 py-0.5 rounded">{approvals.length} pending</span>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-magenta" /> AI Autonomous Queue
+              </h2>
+              <span className="text-[10px] font-bold text-magenta">{queue.filter(q => q.status === 'running').length} active</span>
             </div>
-            {approvals.length === 0 ? <div className="text-center py-8 text-text-muted text-xs">No pending approvals</div> : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {approvals.map(a => (
-                  <div key={a.id} className="p-3 bg-void-light/50 rounded border border-surface-border/50">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-[10px] font-bold uppercase ${severityColor(a.severity)}`}>{a.type.replace(/_/g, ' ')}</span>
-                      <span className="text-[10px] text-text-muted">{timeAgo(a.createdAt)}</span>
+            <div className="space-y-2 max-h-[600px] overflow-y-auto">
+              {queue.map(item => (
+                <div key={item.id} className={`p-3 rounded-lg border transition-all ${item.status === 'complete' ? 'bg-lime-dim/30 border-lime/20' : item.status === 'running' ? 'bg-magenta-dim/20 border-magenta/20' : 'bg-void-light/30 border-surface-border/30'}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      {item.status === 'running' && <Play className="w-3 h-3 text-magenta animate-pulse" />}
+                      {item.status === 'waiting' && <Pause className="w-3 h-3 text-text-muted" />}
+                      {item.status === 'complete' && <CheckCircle2 className="w-3 h-3 text-lime" />}
+                      <span className="text-[10px] font-bold text-text-primary truncate max-w-[140px]">{item.incident}</span>
                     </div>
-                    <div className="text-xs text-text-primary mb-1">{a.title}</div>
-                    <div className="text-[10px] text-text-muted mb-2">by {a.requester}</div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleApproval(a.id, 'approved')} className="flex-1 py-1 text-[10px] font-bold bg-lime/10 text-lime rounded hover:bg-lime/20 transition-colors">Approve</button>
-                      <button onClick={() => handleApproval(a.id, 'denied')} className="flex-1 py-1 text-[10px] font-bold bg-rose/10 text-rose rounded hover:bg-rose/20 transition-colors">Deny</button>
-                    </div>
+                    <span className="text-[9px] font-mono text-magenta">{formatElapsed(item.elapsed)}</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Scanner Cluster */}
-          <section className="glass-surface p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2"><ScanLine className="w-4 h-4 text-cyan" /> Scanners</h2>
-              <span className="text-[10px] font-bold bg-lime-dim text-lime px-2 py-0.5 rounded">{scanners.filter(s => s.status === 'operational').length}/42</span>
-            </div>
-            <div className="grid grid-cols-7 gap-1.5 mb-3">
-              {scanners.map(s => <div key={s.id} title={`${s.name} — ${s.category}`} className={`h-5 rounded-sm transition-all ${s.status === 'operational' ? 'bg-lime/40 hover:bg-lime/60' : 'bg-rose/40 hover:bg-rose/60'}`} />)}
-            </div>
-            {SCANNER_CATEGORIES.map(cat => {
-              const cs = scanners.filter(s => s.category === cat);
-              return <div key={cat} className="flex items-center justify-between text-[10px]"><span className="text-text-muted">{cat}</span><span className={cs.every(s => s.status === 'operational') ? 'text-lime font-bold' : 'text-amber-400'}>{cs.filter(s => s.status === 'operational').length}/{cs.length}</span></div>;
-            })}
-          </section>
-        </div>
-      </div>
-
-      {/* Audit Trail Strip */}
-      <section className="glass-surface p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2"><Hash className="w-4 h-4 text-cyan" /> Immutable Audit Trail</h2>
-          <button onClick={() => navigate('/hq/audit')} className="text-[10px] text-cyan hover:text-cyan-light font-bold uppercase tracking-wider flex items-center gap-1">Full Ledger <ChevronRight className="w-3 h-3" /></button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="cyber-table">
-            <thead><tr><th>ID</th><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th><th>Severity</th><th>SHA-256 Hash</th></tr></thead>
-            <tbody>
-              {auditEntries.map(e => (
-                <tr key={e.id}>
-                  <td className="font-mono text-text-muted">{String(e.id).slice(0, 6)}</td>
-                  <td className="font-mono text-text-muted">{new Date(e.createdAt).toLocaleString()}</td>
-                  <td className="font-mono text-cyan">{e.actor}</td>
-                  <td className="font-bold uppercase text-text-primary">{e.action}</td>
-                  <td className="text-text-secondary">{e.target}</td>
-                  <td><span className={severityBadge(e.severity)}>{e.severity}</span></td>
-                  <td className="font-mono text-[10px] text-text-muted">{e.hash.slice(0, 20)}...</td>
-                </tr>
+                  {/* Stage indicator */}
+                  <div className="flex items-center gap-1 mb-1.5">
+                    {['triage','isolate','repair','validate','deploy'].map((s, i) => (
+                      <div key={s} className="flex items-center flex-1">
+                        <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[6px] font-black ${
+                          item.stage === s ? 'bg-magenta text-white animate-pulse' :
+                          ['triage','isolate','repair','validate','deploy'].indexOf(item.stage) > i ? 'bg-lime/30 text-lime' :
+                          'bg-surface-border text-text-disabled'
+                        }`}>{i + 1}</div>
+                        {i < 4 && <div className={`flex-1 h-px mx-0.5 ${['triage','isolate','repair','validate','deploy'].indexOf(item.stage) > i ? 'bg-lime' : 'bg-surface-border'}`} />}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Agent + Delta */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-text-muted font-mono uppercase">{item.agent}</span>
+                    <span className="text-[9px] font-mono text-cyan">{item.delta}</span>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+              {queue.length === 0 && <div className="text-center py-8 text-text-muted text-xs">No active AI pipelines</div>}
+            </div>
+          </section>
         </div>
-      </section>
-    </div>
-  );
-}
-
-// ── Sub-Components ──
-function MetricCardComponent({ metric }: { metric: MetricCard }) {
-  const colorClasses = { lime: 'text-lime', cyan: 'text-cyan', magenta: 'text-magenta', rose: 'text-rose' };
-  return (
-    <div className="glass-surface p-4 border border-surface-border hover:border-opacity-50 transition-all">
-      <div className="flex items-start justify-between mb-2">
-        <metric.icon className={`w-4 h-4 ${colorClasses[metric.color]}`} />
-        {metric.trend !== undefined && <span className={`flex items-center gap-1 text-[10px] font-bold ${metric.trend >= 0 ? 'text-lime' : 'text-rose'}`}><TrendingUp className="w-3 h-3" /> {metric.trend > 0 ? '+' : ''}{metric.trend}%</span>}
       </div>
-      <div className={`text-xl font-black ${colorClasses[metric.color]}`}>{metric.value}</div>
-      <div className="text-[10px] text-text-muted mt-1 font-medium uppercase tracking-wider">{metric.label}</div>
-      <div className="text-[10px] text-text-secondary mt-0.5">{metric.sub}</div>
     </div>
   );
 }
 
-function QuickActionCard({ icon: Icon, label, desc, color, onClick }: { icon: React.ElementType; label: string; desc: string; color: string; onClick: () => void }) {
-  const colorMap: Record<string, string> = { lime: 'border-lime/20 hover:border-lime/40 hover:bg-lime-dim', cyan: 'border-cyan/20 hover:border-cyan/40 hover:bg-cyan-dim', magenta: 'border-magenta/20 hover:border-magenta/40 hover:bg-magenta-dim', rose: 'border-rose/20 hover:border-rose/40 hover:bg-rose-dim' };
-  const iconMap: Record<string, string> = { lime: 'text-lime', cyan: 'text-cyan', magenta: 'text-magenta', rose: 'text-rose' };
+// ── Counter Card with optional blink ──
+function CounterCard({ label, value, icon: Icon, color, sub, trend, blinking, onClick }: {
+  label: string; value: string | number; icon: React.ElementType; color: string;
+  sub: string; trend?: number; blinking?: boolean; onClick?: () => void;
+}) {
+  const c = { lime: 'text-lime border-lime/20 bg-lime-dim', cyan: 'text-cyan border-cyan/20 bg-cyan-dim', magenta: 'text-magenta border-magenta/20 bg-magenta-dim', rose: 'text-rose border-rose/20 bg-rose-dim' }[color] || '';
   return (
-    <button onClick={onClick} className={`glass-surface p-4 text-left border transition-all ${colorMap[color]}`}>
-      <Icon className={`w-5 h-5 ${iconMap[color]} mb-2`} />
-      <div className="text-xs font-bold text-text-primary">{label}</div>
-      <div className="text-[10px] text-text-muted">{desc}</div>
+    <button onClick={onClick} className={`glass-surface p-4 border text-left transition-all hover:opacity-90 ${c} ${blinking ? 'animate-pulse' : ''} ${onClick ? 'cursor-pointer' : ''}`}>
+      <div className="flex items-center justify-between mb-2">
+        <Icon className={`w-4 h-4 ${color === 'lime' ? 'text-lime' : color === 'cyan' ? 'text-cyan' : color === 'magenta' ? 'text-magenta' : 'text-rose'}`} />
+        {trend !== undefined && <span className={`text-[10px] font-bold ${trend >= 0 ? 'text-lime' : 'text-rose'}`}>{trend > 0 ? '+' : ''}{trend}%</span>}
+      </div>
+      <div className={`text-xl font-black ${color === 'lime' ? 'text-lime' : color === 'cyan' ? 'text-cyan' : color === 'magenta' ? 'text-magenta' : 'text-rose'}`}>{value}</div>
+      <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mt-1">{label}</div>
+      <div className="text-[10px] text-text-secondary mt-0.5">{sub}</div>
     </button>
   );
 }
 
-function ActiveIncidentsTable() {
-  const [incidents, setIncidents] = useState<Array<{id: string; title: string; customer_name: string; priority: string; status: string; created_at: string; claimed_by_name?: string}>>([]);
-  useEffect(() => { supabase.from('incidents').select('id,title,customer_name,priority,status,created_at').eq('status', 'open').order('created_at', { ascending: false }).limit(8).then(({ data }) => setIncidents(data ?? [])); }, []);
-  const pColor = (p: string) => p === 'critical' ? 'badge-rose' : p === 'high' ? 'badge-magenta' : p === 'medium' ? 'badge-cyan' : 'badge-lime';
+// ── Attack Surface SVG Graph ──
+function AttackSurfaceGraph() {
+  const [t, setT] = useState(0);
+  useEffect(() => { let s: number | null = null; const anim = (ts: number) => { if (!s) s = ts; setT((ts - s) / 1000); raf = requestAnimationFrame(anim); }; let raf = requestAnimationFrame(anim); return () => cancelAnimationFrame(raf); }, []);
+
+  const bars = Array.from({ length: 24 }, (_, i) => {
+    const h = 30 + Math.sin(t * 0.5 + i * 0.8) * 20 + Math.random() * 15;
+    const isAlert = h > 55;
+    return { h: Math.max(5, Math.min(90, h)), alert: isAlert };
+  });
+
   return (
-    <div className="overflow-x-auto">
-      <table className="cyber-table">
-        <thead><tr><th>Incident</th><th>Customer</th><th>Prio</th><th>Status</th><th>Assigned</th><th>Created</th></tr></thead>
-        <tbody>
-          {incidents.map(inc => (
-            <tr key={inc.id}>
-              <td className="text-text-primary font-medium">{inc.title}</td>
-              <td className="text-text-secondary">{inc.customer_name ?? '—'}</td>
-              <td><span className={pColor(inc.priority)}>{inc.priority}</span></td>
-              <td><span className="badge-cyan">{inc.status}</span></td>
-              <td className="text-text-muted">{inc.claimed_by_name ?? 'Unassigned'}</td>
-              <td className="font-mono text-text-muted">{timeAgo(inc.created_at)}</td>
-            </tr>
-          ))}
-          {incidents.length === 0 && <tr><td colSpan={6} className="text-center py-6 text-text-muted text-xs">No active incidents</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <svg viewBox="0 0 600 120" className="w-full h-32">
+      {/* Grid lines */}
+      {[25, 50, 75].map(y => <line key={y} x1="0" y1={y} x2="600" y2={y} stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2,4" />)}
+      {/* Bars */}
+      {bars.map((bar, i) => (
+        <g key={i}>
+          <rect x={i * 24 + 4} y={100 - bar.h} width="16" height={bar.h} rx="2"
+            fill={bar.alert ? '#f43f5e' : '#22d3ee'} opacity={bar.alert ? 0.6 + Math.sin(t * 3 + i) * 0.3 : 0.4} />
+        </g>
+      ))}
+      {/* Threshold line */}
+      <line x1="0" y1="35" x2="600" y2="35" stroke="#f43f5e" strokeWidth="1" strokeDasharray="4,4" opacity="0.6" />
+      <text x="580" y="32" fill="#f43f5e" fontSize="8" fontFamily="JetBrains Mono">THRESH</text>
+    </svg>
   );
 }
 
-// ── Helpers ──
 function planPrice(plan: string): number { const p = (plan ?? '').toLowerCase(); if (p.includes('fortress')) return 599; if (p.includes('sentinel')) return 249; if (p.includes('guardian')) return 99; return 0; }
-function severityColor(sev: string) { if (sev === 'critical') return 'text-rose font-bold'; if (sev === 'high') return 'text-magenta font-bold'; if (sev === 'medium') return 'text-cyan font-bold'; return 'text-lime font-bold'; }
-function severityBadge(sev: string) { if (sev === 'critical') return 'badge-rose'; if (sev === 'warn') return 'badge-magenta'; if (sev === 'info') return 'badge-cyan'; return 'badge-lime'; }
-function timeAgo(date: string) { const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000); if (s < 60) return `${s}s ago`; if (s < 3600) return `${Math.floor(s / 60)}m ago`; if (s < 86400) return `${Math.floor(s / 3600)}h ago`; return `${Math.floor(s / 86400)}d ago`; }
-function generateHash() { return Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''); }
+function RefreshCw(props: React.SVGProps<SVGSVGElement>) { return <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>; }

@@ -1,13 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
-// HQ INCIDENTS — Enhanced with Smart Assignment & OpsGenie Triggers
-// Assignment dropdowns with workload scores | Paging modal
+// ALL INCIDENTS — Triage Worklist Matrix
+// Dense table, multi-filter, SLA counter, contextual side drawer
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import {
-  AlertTriangle, Zap, ChevronDown, RefreshCw,
-  UserPlus, Loader2, Radio
+  AlertTriangle, ChevronDown,
+  UserPlus, X, Eye, ChevronLeft, ChevronRight, Terminal
 } from 'lucide-react';
 
 interface Incident {
@@ -16,181 +16,164 @@ interface Incident {
   description: string;
   priority: string;
   status: string;
+  stack: string;
   customer_name: string;
   website_url: string;
   claimed_by: string | null;
   claimed_by_name: string | null;
   agent_stage: string;
   created_at: string;
+  sla_deadline: string | null;
   resolution_time: number | null;
 }
 
-interface EngineerOption {
+interface Engineer {
   id: string;
   name: string;
   status: string;
-  specializations: string[];
   active_incidents: number;
-  avg_resolution: number;
-  isOnCall: boolean;
 }
 
 export function HQIncidents() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [engineers, setEngineers] = useState<EngineerOption[]>([]);
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [now, setNow] = useState(Date.now());
+  const [drawerOpen, setDrawerOpen] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState<string | null>(null);
-  const [pageModal, setPageModal] = useState<{incidentId: string; engineerName: string} | null>(null);
-  const [updating, setUpdating] = useState(false);
+
+  // Filters
+  const [fPrio, setFPrio] = useState<Set<string>>(new Set());
+  const [fStack, setFStack] = useState<Set<string>>(new Set());
+  const [fStatus, setFStatus] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 15;
+
+  // Clock
+  useEffect(() => { const i = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(i); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: incData } = await supabase.from('incidents').select('*').order('created_at', { ascending: false }).limit(50);
-    setIncidents((incData ?? []).map(i => ({
+    const { data: incs } = await supabase.from('incidents').select('*').order('created_at', { ascending: false }).limit(200);
+    setIncidents((incs ?? []).map(i => ({
       id: String(i.id), title: i.title ?? '', description: i.description ?? '',
-      priority: i.priority ?? 'medium', status: i.status ?? 'open',
+      priority: i.priority ?? 'medium', status: i.status ?? 'open', stack: i.stack ?? 'Infrastructure',
       customer_name: i.customer_name ?? 'Unknown', website_url: i.website_url ?? '',
       claimed_by: i.claimed_by ?? null, claimed_by_name: i.claimed_by_name ?? null,
       agent_stage: i.agent_stage ?? 'triage', created_at: i.created_at ?? '',
-      resolution_time: i.resolution_time ?? null,
+      sla_deadline: i.sla_deadline ?? null, resolution_time: i.resolution_time ?? null,
     })));
-
-    const { data: engData } = await supabase.from('engineers').select('id,name,status,specializations,resolved_count');
-    setEngineers((engData ?? []).map(e => ({
-      id: String(e.id), name: e.name ?? 'Unknown', status: e.status ?? 'offline',
-      specializations: e.specializations ?? [], active_incidents: Math.floor(Math.random() * 4),
-      avg_resolution: Math.floor(Math.random() * 40) + 10, isOnCall: e.status === 'on_call',
-    })));
+    const { data: engs } = await supabase.from('engineers').select('id,name,status');
+    setEngineers((engs ?? []).map(e => ({ id: String(e.id), name: e.name ?? 'Unknown', status: e.status ?? 'offline', active_incidents: 0 })));
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const handleAssign = async (incidentId: string, engineerId: string, engineerName: string, priority: string) => {
-    setUpdating(true);
-    await supabase.from('incidents').update({ claimed_by: engineerId, claimed_by_name: engineerName }).eq('id', incidentId);
-    setAssignOpen(null);
-    setUpdating(false);
-    load();
+  const toggle = (set: Set<string>, v: string) => { const n = new Set(set); n.has(v) ? n.delete(v) : n.add(v); return n; };
+  const filtered = incidents.filter(i => {
+    if (fPrio.size > 0 && !fPrio.has(i.priority)) return false;
+    if (fStack.size > 0 && !fStack.has(i.stack)) return false;
+    if (fStatus.size > 0 && !fStatus.has(i.status)) return false;
+    return true;
+  });
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
-    // For P1/P2, prompt OpsGenie page
-    if (priority === 'critical' || priority === 'high') {
-      setPageModal({ incidentId, engineerName });
-    }
+  const handleAssign = async (incId: string, engId: string, engName: string) => {
+    await supabase.from('incidents').update({ claimed_by: engId, claimed_by_name: engName }).eq('id', incId);
+    setAssignOpen(null); load();
   };
 
-  const handleOpsGeniePage = async (page: boolean) => {
-    if (page && pageModal) {
-      // In real app, call OpsGenie API
-      console.log(`Paging ${pageModal.engineerName} via OpsGenie for incident ${pageModal.incidentId}`);
-    }
-    setPageModal(null);
+  const slaColor = (inc: Incident) => {
+    if (!inc.sla_deadline) return 'text-text-muted';
+    const remaining = new Date(inc.sla_deadline).getTime() - now;
+    if (remaining < 0) return 'text-rose animate-pulse font-bold';
+    if (remaining < 300000) return 'text-rose';
+    if (remaining < 900000) return 'text-magenta';
+    return 'text-lime';
   };
 
-  const filtered = filter === 'all' ? incidents : incidents.filter(i => i.status === filter);
-  const openCount = incidents.filter(i => i.status !== 'resolved' && i.status !== 'closed').length;
-  const avgRes = incidents.filter(i => i.resolution_time).length > 0
-    ? Math.round(incidents.filter(i => i.resolution_time).reduce((a, i) => a + (i.resolution_time || 0), 0) / incidents.filter(i => i.resolution_time).length / 60)
-    : 0;
+  const formatSla = (inc: Incident) => {
+    if (!inc.sla_deadline) return '—';
+    const remaining = new Date(inc.sla_deadline).getTime() - now;
+    if (remaining < 0) return 'BREACHED';
+    const m = Math.floor(remaining / 60000);
+    const h = Math.floor(m / 60);
+    if (h > 0) return `${h}h ${m % 60}m`;
+    return `${m}m`;
+  };
 
   if (loading) return <div className="flex items-center justify-center h-96"><Zap className="w-5 h-5 text-lime animate-pulse" /><span className="ml-2 text-sm text-text-muted font-mono">Loading Incidents...</span></div>;
 
+  const drawerIncident = incidents.find(i => i.id === drawerOpen);
+
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-text-primary flex items-center gap-2"><AlertTriangle className="w-6 h-6 text-rose" /> INCIDENTS</h1>
-          <p className="text-xs text-text-muted mt-1 font-mono">{openCount} open — {avgRes}m avg resolution</p>
+          <h1 className="text-2xl font-black tracking-tight text-text-primary flex items-center gap-2"><AlertTriangle className="w-6 h-6 text-rose" /> ALL INCIDENTS</h1>
+          <p className="text-xs text-text-muted mt-1 font-mono">{filtered.length} total — {incidents.filter(i => i.status !== 'resolved' && i.status !== 'closed').length} open</p>
         </div>
-        <button onClick={load} className="p-2 text-text-muted hover:text-cyan transition-colors"><RefreshCw className="w-4 h-4" /></button>
       </div>
 
-      {/* Stats Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {['all', 'open', 'submitted', 'triaging', 'resolved'].map(f => (
-          <button key={f} onClick={() => setFilter(f)} className={`p-3 rounded-lg border text-left transition-all ${filter === f ? 'bg-cyan-dim border-cyan/30' : 'bg-void-light/30 border-surface-border/50 hover:border-cyan/20'}`}>
-            <div className={`text-lg font-black ${filter === f ? 'text-cyan' : 'text-text-primary'}`}>
-              {f === 'all' ? incidents.length : incidents.filter(i => i.status === f).length}
-            </div>
-            <div className="text-[9px] text-text-muted uppercase font-bold tracking-wider">{f}</div>
-          </button>
-        ))}
+      {/* Filter Bar */}
+      <div className="glass-surface p-4 space-y-3">
+        {/* Severity */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Severity:</span>
+          {['critical','high','medium','low'].map(p => (
+            <button key={p} onClick={() => setFPrio(toggle(fPrio, p))} className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase border transition-all ${fPrio.has(p) ? p === 'critical' ? 'bg-rose-dim text-rose border-rose/30' : p === 'high' ? 'bg-magenta-dim text-magenta border-magenta/30' : p === 'medium' ? 'bg-cyan-dim text-cyan border-cyan/30' : 'bg-lime-dim text-lime border-lime/30' : 'bg-void-light text-text-muted border-surface-border'}`}>{p}</button>
+          ))}
+        </div>
+        {/* Stack */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Stack:</span>
+          {['Database','Edge Function','SSL/DNS','Auth','Infrastructure','Frontend'].map(s => (
+            <button key={s} onClick={() => setFStack(toggle(fStack, s))} className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${fStack.has(s) ? 'bg-cyan-dim text-cyan border-cyan/30' : 'bg-void-light text-text-muted border-surface-border'}`}>{s}</button>
+          ))}
+        </div>
+        {/* Status */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Status:</span>
+          {['triggered','open','triaging','patching','validating','resolved'].map(s => (
+            <button key={s} onClick={() => setFStatus(toggle(fStatus, s))} className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${fStatus.has(s) ? 'bg-lime-dim text-lime border-lime/30' : 'bg-void-light text-text-muted border-surface-border'}`}>{s}</button>
+          ))}
+          {(fPrio.size + fStack.size + fStatus.size > 0) && (
+            <button onClick={() => { setFPrio(new Set()); setFStack(new Set()); setFStatus(new Set()); }} className="text-[10px] text-rose font-bold hover:text-rose-light ml-2">Clear All</button>
+          )}
+        </div>
       </div>
 
-      {/* Incident Table */}
+      {/* Table */}
       <div className="glass-surface rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="cyber-table">
-            <thead>
-              <tr>
-                <th>Incident</th>
-                <th>Customer</th>
-                <th>Prio</th>
-                <th>Status</th>
-                <th>Stage</th>
-                <th>Assigned To</th>
-                <th>Created</th>
-              </tr>
-            </thead>
+            <thead><tr><th>ID</th><th>Incident</th><th>Customer</th><th>Prio</th><th>Stack</th><th>Status</th><th>Assigned</th><th>SLA</th><th>Stage</th><th>Actions</th></tr></thead>
             <tbody>
-              {filtered.map(inc => (
-                <tr key={inc.id} className="group">
-                  <td>
-                    <div className="text-xs font-semibold text-text-primary">{inc.title}</div>
-                    <div className="text-[10px] text-text-muted font-mono truncate max-w-[200px]">{inc.website_url}</div>
-                  </td>
-                  <td className="text-text-secondary">{inc.customer_name}</td>
+              {paged.map(inc => (
+                <tr key={inc.id} className="cursor-pointer hover:bg-cyan-dim/10 transition-colors" onClick={() => setDrawerOpen(inc.id)}>
+                  <td className="font-mono text-[10px] text-text-muted">{String(inc.id).slice(0, 8)}</td>
+                  <td className="text-xs font-semibold text-text-primary">{inc.title}</td>
+                  <td className="text-xs text-text-secondary">{inc.customer_name}</td>
                   <td><span className={priorityBadge(inc.priority)}>{inc.priority}</span></td>
+                  <td><span className="text-[9px] font-mono text-cyan bg-cyan-dim px-1.5 py-0.5 rounded">{inc.stack}</span></td>
                   <td><span className="badge-cyan">{inc.status}</span></td>
-                  <td><span className="text-[10px] font-bold text-lime uppercase">{inc.agent_stage}</span></td>
                   <td className="relative">
-                    {inc.claimed_by ? (
-                      <span className="text-xs text-cyan font-semibold">{inc.claimed_by_name ?? 'Assigned'}</span>
-                    ) : (
+                    {inc.claimed_by ? <span className="text-xs text-cyan">{inc.claimed_by_name}</span> : (
                       <div className="relative">
-                        <button
-                          onClick={() => setAssignOpen(assignOpen === inc.id ? null : inc.id)}
-                          className="flex items-center gap-1.5 px-2.5 py-1 bg-void-light border border-surface-border rounded text-[10px] font-bold text-text-muted hover:text-lime hover:border-lime/30 transition-all"
-                        >
-                          <UserPlus className="w-3 h-3" /> Assign
-                          <ChevronDown className="w-3 h-3" />
+                        <button onClick={(e) => { e.stopPropagation(); setAssignOpen(assignOpen === inc.id ? null : inc.id); }} className="px-2 py-0.5 bg-void-light border border-surface-border rounded text-[9px] font-bold text-text-muted hover:text-lime flex items-center gap-1">
+                          <UserPlus className="w-3 h-3" /> Assign <ChevronDown className="w-2.5 h-2.5" />
                         </button>
-
-                        {/* Assignment Dropdown */}
                         {assignOpen === inc.id && (
-                          <div className="absolute z-30 mt-1 w-72 bg-surface-solid border border-surface-border rounded-lg shadow-xl py-2 animate-fade-in">
-                            <div className="px-3 py-1.5 border-b border-surface-border">
-                              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Select Engineer</span>
-                              {(inc.priority === 'critical' || inc.priority === 'high') && (
-                                <span className="ml-2 text-[9px] font-bold text-rose animate-pulse">P1/P2 — Recommend On-Call</span>
-                              )}
-                            </div>
-                            {engineers.sort((a, b) => (b.isOnCall ? 1 : 0) - (a.isOnCall ? 1 : 0)).map(eng => (
-                              <button
-                                key={eng.id}
-                                onClick={() => handleAssign(inc.id, eng.id, eng.name, inc.priority)}
-                                disabled={updating}
-                                className="w-full text-left px-3 py-2.5 hover:bg-surface-hover/50 transition-colors flex items-start gap-2"
-                              >
-                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${eng.isOnCall ? 'bg-lime-dim text-lime border border-lime/30' : 'bg-surface-solid text-text-muted border border-surface-border'}`}>
-                                  {eng.name.charAt(0)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-xs font-semibold text-text-primary">{eng.name}</span>
-                                    {eng.isOnCall && <span className="text-[8px] font-bold text-lime bg-lime-dim px-1 rounded">ON-CALL</span>}
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[9px] text-text-muted">{eng.active_incidents} active</span>
-                                    <span className="text-[9px] text-cyan">{eng.avg_resolution}m avg</span>
-                                    {eng.specializations.slice(0, 2).map(s => (
-                                      <span key={s} className="text-[8px] text-cyan bg-cyan-dim px-1 rounded">{s}</span>
-                                    ))}
-                                  </div>
-                                </div>
-                                {updating && <Loader2 className="w-3 h-3 text-cyan animate-spin" />}
+                          <div className="absolute z-30 mt-1 w-56 bg-surface-solid border border-surface-border rounded-lg shadow-xl py-1" onClick={e => e.stopPropagation()}>
+                            <div className="px-2 py-1 border-b border-surface-border text-[9px] text-text-muted uppercase font-bold">Select Engineer</div>
+                            {engineers.sort((a, b) => (b.status === 'on_call' ? 1 : 0) - (a.status === 'on_call' ? 1 : 0)).map(eng => (
+                              <button key={eng.id} onClick={() => handleAssign(inc.id, eng.id, eng.name)} className="w-full text-left px-2 py-1.5 hover:bg-surface-hover/50 flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${eng.status === 'on_call' ? 'bg-lime' : 'bg-text-muted'}`} />
+                                <span className="text-xs text-text-primary">{eng.name}</span>
+                                {eng.status === 'on_call' && <span className="text-[8px] text-lime font-bold ml-auto">ON-CALL</span>}
                               </button>
                             ))}
                           </div>
@@ -198,60 +181,85 @@ export function HQIncidents() {
                       </div>
                     )}
                   </td>
-                  <td className="font-mono text-text-muted text-[10px]">{timeAgo(inc.created_at)}</td>
+                  <td className={`font-mono text-[10px] ${slaColor(inc)}`}>{formatSla(inc)}</td>
+                  <td><span className="text-[9px] font-bold text-lime uppercase">{inc.agent_stage}</span></td>
+                  <td><Eye className="w-3.5 h-3.5 text-text-muted hover:text-cyan" /></td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-8 text-text-muted text-xs">No incidents found</td></tr>
-              )}
+              {paged.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-text-muted text-xs">No incidents match filters</td></tr>}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* OpsGenie Page Modal */}
-      {pageModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="glass-surface w-full max-w-sm p-6 animate-slide-up">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-rose-dim border border-rose/30 flex items-center justify-center">
-                <Radio className="w-5 h-5 text-rose animate-pulse" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-rose uppercase">Page via OpsGenie?</h3>
-                <p className="text-[10px] text-text-muted">P1/P2 incident — immediate attention required</p>
-              </div>
-            </div>
-            <p className="text-xs text-text-secondary mb-4">
-              <span className="text-cyan font-semibold">{pageModal.engineerName}</span> has been assigned. Send an urgent OpsGenie page notification?
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => handleOpsGeniePage(false)} className="flex-1 py-2.5 text-xs font-bold text-text-secondary border border-surface-border rounded-lg hover:bg-surface-hover/30 transition-colors">
-                Assign Only
-              </button>
-              <button onClick={() => handleOpsGeniePage(true)} className="flex-1 py-2.5 text-xs font-bold bg-rose text-white rounded-lg hover:bg-rose-light transition-colors animate-pulse-slow">
-                Yes, Page Now
-              </button>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-surface-border">
+            <span className="text-[10px] text-text-muted">Page {page} of {totalPages}</span>
+            <div className="flex gap-1">
+              <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30"><ChevronLeft className="w-4 h-4" /></button>
+              <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* Contextual Side Drawer */}
+      {drawerIncident && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setDrawerOpen(null)} />
+          <aside className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-void-deep border-l border-surface-border z-50 p-6 overflow-y-auto animate-slide-in-right">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-black text-text-primary">Incident Detail</h3>
+              <button onClick={() => setDrawerOpen(null)} className="p-1 text-text-muted hover:text-text-primary"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <span className={priorityBadge(drawerIncident.priority)}>{drawerIncident.priority}</span>
+                <span className="badge-cyan">{drawerIncident.status}</span>
+                <span className="text-[10px] font-mono text-cyan bg-cyan-dim px-2 py-0.5 rounded">{drawerIncident.stack}</span>
+              </div>
+
+              <h4 className="text-xl font-black text-text-primary">{drawerIncident.title}</h4>
+              <p className="text-sm text-text-secondary leading-relaxed">{drawerIncident.description || 'No description provided.'}</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-void-light rounded border border-surface-border/50">
+                  <div className="text-[10px] text-text-muted uppercase font-bold">Customer</div>
+                  <div className="text-sm text-text-primary">{drawerIncident.customer_name}</div>
+                </div>
+                <div className="p-3 bg-void-light rounded border border-surface-border/50">
+                  <div className="text-[10px] text-text-muted uppercase font-bold">Target</div>
+                  <div className="text-sm text-text-primary font-mono truncate">{drawerIncident.website_url || '—'}</div>
+                </div>
+                <div className="p-3 bg-void-light rounded border border-surface-border/50">
+                  <div className="text-[10px] text-text-muted uppercase font-bold">SLA Remaining</div>
+                  <div className={`text-sm font-black font-mono ${slaColor(drawerIncident)}`}>{formatSla(drawerIncident)}</div>
+                </div>
+                <div className="p-3 bg-void-light rounded border border-surface-border/50">
+                  <div className="text-[10px] text-text-muted uppercase font-bold">Assigned</div>
+                  <div className="text-sm text-cyan">{drawerIncident.claimed_by_name || 'Unassigned'}</div>
+                </div>
+              </div>
+
+              {/* Stack trace / logs */}
+              <div className="p-3 bg-void-deep rounded border border-surface-border font-mono text-[10px] text-text-muted space-y-1">
+                <div className="flex items-center gap-2 mb-2 text-text-secondary font-bold"><Terminal className="w-3 h-3" /> Pipeline Logs</div>
+                <div><span className="text-lime">&gt;</span> [{new Date(drawerIncident.created_at).toLocaleTimeString()}] Incident {String(drawerIncident.id).slice(0, 8)} triggered</div>
+                <div><span className="text-lime">&gt;</span> Triage agent: classified as {drawerIncident.priority}</div>
+                <div><span className="text-lime">&gt;</span> Isolate agent: provisioning sandbox VM</div>
+                <div><span className="text-cyan">&gt;</span> Current stage: {drawerIncident.agent_stage}</div>
+                {drawerIncident.claimed_by && <div><span className="text-magenta">&gt;</span> Engineer: {drawerIncident.claimed_by_name}</div>}
+                <div><span className="text-lime">&gt;</span> 42-scanner matrix: verifying</div>
+              </div>
+            </div>
+          </aside>
+        </>
       )}
     </div>
   );
 }
 
-// ── Helpers ──
-function priorityBadge(p: string) {
-  if (p === 'critical') return 'badge-rose';
-  if (p === 'high') return 'badge-magenta';
-  if (p === 'medium') return 'badge-cyan';
-  return 'badge-lime';
-}
+function priorityBadge(p: string) { if (p === 'critical') return 'badge-rose'; if (p === 'high') return 'badge-magenta'; if (p === 'medium') return 'badge-cyan'; return 'badge-lime'; }
 
-function timeAgo(date: string) {
-  const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
+// Inline Zap icon
+function Zap(props: React.SVGProps<SVGSVGElement>) { return <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>; }

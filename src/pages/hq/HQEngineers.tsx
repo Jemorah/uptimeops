@@ -46,16 +46,18 @@ export function HQEngineers() {
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('engineers').select('*').order('name', { ascending: true });
-    setEngineers((data ?? []).map(e => ({
-      id: String(e.id), name: e.name ?? 'Unknown', email: e.email ?? '',
-      status: (e.status ?? 'offline') as Engineer['status'],
-      specializations: e.specializations ?? [],
-      resolved_count: e.resolved_count ?? 0,
+    const s = (v: unknown) => String(v ?? '');
+    const n = (v: unknown) => Number(v ?? 0);
+    setEngineers((data ?? []).map((e: Record<string, unknown>) => ({
+      id: s(e.id), name: s(e.name) || 'Unknown', email: s(e.email),
+      status: (s(e.status) || 'offline') as Engineer['status'],
+      specializations: Array.isArray(e.specializations) ? e.specializations as string[] : [],
+      resolved_count: n(e.resolved_count),
       opgenie_sync: (['synced','pending','failed'] as const)[Math.floor(Math.random() * 3)],
       active_incidents: Math.floor(Math.random() * 4),
       avg_resolution_min: Math.floor(Math.random() * 40) + 10,
       alert_ack_rate: Math.floor(Math.random() * 30) + 70,
-      join_date: e.created_at ?? new Date().toISOString(),
+      join_date: s(e.created_at) || new Date().toISOString(),
     })));
     setLoading(false);
   }, []);
