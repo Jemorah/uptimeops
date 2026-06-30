@@ -37,46 +37,30 @@ interface IncidentState {
   setPage: (page: number) => void;
 }
 
+import type { StoreApi } from 'zustand';
+
+type ISet = StoreApi<IncidentState>['setState'];
+
 export const useIncidentStore = create<IncidentState>()(
   persist(
-    (set) => ({
+    (set: ISet) => ({
       selectedIncidentId: null,
-      filters: {
-        status: [],
-        priority: [],
-        search: '',
-        dateRange: null,
-      },
+      filters: { status: [], priority: [], search: '', dateRange: null },
       activeWorkspaceTab: 'overview',
       activeAgentStage: 'triage',
       page: 1,
       pageSize: 25,
 
-      setSelectedIncident: (id) => set({ selectedIncidentId: id }),
-
-      setFilters: (filters) =>
-        set((s) => ({ filters: { ...s.filters, ...filters } })),
-
-      clearFilters: () =>
-        set({
-          filters: {
-            status: [],
-            priority: [],
-            search: '',
-            dateRange: null,
-          },
-          page: 1,
-        }),
-
-      setActiveWorkspaceTab: (tab) => set({ activeWorkspaceTab: tab }),
-
-      setActiveAgentStage: (stage) => set({ activeAgentStage: stage }),
-
-      setPage: (page) => set({ page }),
+      setSelectedIncident: (id: string | null) => set({ selectedIncidentId: id }),
+      setFilters: (filters: Partial<IncidentFilters>) => set((s: IncidentState) => ({ filters: { ...s.filters, ...filters } })),
+      clearFilters: () => set({ filters: { status: [], priority: [], search: '', dateRange: null }, page: 1 }),
+      setActiveWorkspaceTab: (tab: string) => set({ activeWorkspaceTab: tab }),
+      setActiveAgentStage: (stage: string) => set({ activeAgentStage: stage }),
+      setPage: (page: number) => set({ page }),
     }),
     {
       name: 'uptimeops-incidents',
-      partialize: (state) => ({
+      partialize: (state: IncidentState) => ({
         selectedIncidentId: state.selectedIncidentId,
         filters: state.filters,
         activeWorkspaceTab: state.activeWorkspaceTab,

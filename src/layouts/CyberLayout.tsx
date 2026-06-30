@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// CYBER LAYOUT — Unified Dashboard Shell (v2.2)
-// Persistent collapsible left sidebar + top utility header
-// Used by: HQ Control Center, Engineer Dashboard, Customer Dashboard
+// CYBER LAYOUT — Unified Dashboard Shell (v2.3)
+// 12-item collapsible sidebar + top utility header + breadcrumbs
 // ═══════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from 'react';
@@ -9,18 +8,19 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
 import {
-  LayoutDashboard, AlertTriangle, CreditCard, Shield,
+  LayoutDashboard, AlertTriangle,
   MessageSquare, Settings, LogOut, Zap, Terminal,
-  Users, CheckSquare, ClipboardList,
-  Radio, ChevronLeft, ChevronRight, ScanLine,
-  ShieldCheck, Wifi, WifiOff, ChevronDown,
-  User, Bell, ShieldAlert, HardHat, Building2, Crown
+  Users, CheckSquare, ClipboardList, ChevronLeft,
+  ChevronRight, ScanLine, ShieldCheck, Wifi, WifiOff,
+  ChevronDown, User, Bell, ShieldAlert, HardHat,
+  Building2, Crown, BookOpen, Radio, Bug, Lock
 } from 'lucide-react';
 
 interface NavItem {
   label: string;
   path: string;
   icon: React.ElementType;
+  badge?: number;
 }
 
 // ── Navigation Config Per Role ──
@@ -29,8 +29,7 @@ const NAV_CONFIG: Record<string, NavItem[]> = {
     { label: 'Dashboard', path: '/customer', icon: LayoutDashboard },
     { label: 'Incidents', path: '/customer/incidents', icon: AlertTriangle },
     { label: 'Security', path: '/customer/security', icon: ShieldCheck },
-    { label: 'Vault', path: '/customer/vault', icon: Shield },
-    { label: 'Billing', path: '/customer/billing', icon: CreditCard },
+    { label: 'Vault', path: '/customer/vault', icon: Lock },
     { label: 'Messages', path: '/customer/comms', icon: MessageSquare },
     { label: 'Settings', path: '/customer/settings', icon: Settings },
   ],
@@ -44,24 +43,28 @@ const NAV_CONFIG: Record<string, NavItem[]> = {
     { label: 'Settings', path: '/engineer/settings', icon: Settings },
   ],
   coordinator: [
-    { label: 'Control Center', path: '/hq', icon: LayoutDashboard },
-    { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle },
-    { label: 'Engineers', path: '/hq/engineers', icon: Users },
-    { label: 'Approvals', path: '/hq/approvals', icon: CheckSquare },
-    { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList },
-    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine },
-    { label: 'Gap Seal', path: '/hq/gap-seal', icon: Shield },
-    { label: 'Settings', path: '/hq/settings', icon: Settings },
+    { label: 'Control Center', path: '/hq', icon: LayoutDashboard, badge: 0 },
+    { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle, badge: 7 },
+    { label: 'Comms Center', path: '/hq/communications', icon: MessageSquare, badge: 3 },
+    { label: 'Engineers', path: '/hq/engineers', icon: Users, badge: 0 },
+    { label: 'Approvals', path: '/hq/approvals', icon: CheckSquare, badge: 2 },
+    { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList, badge: 0 },
+    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine, badge: 0 },
+    { label: 'Gap Seal', path: '/hq/gap-seal', icon: Bug, badge: 0 },
+    { label: 'Guidelines', path: '/hq/guidelines', icon: BookOpen, badge: 0 },
+    { label: 'Settings', path: '/hq/settings', icon: Settings, badge: 0 },
   ],
   admin: [
-    { label: 'Control Center', path: '/hq', icon: LayoutDashboard },
-    { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle },
-    { label: 'Engineers', path: '/hq/engineers', icon: Users },
-    { label: 'Approvals', path: '/hq/approvals', icon: CheckSquare },
-    { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList },
-    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine },
-    { label: 'Gap Seal', path: '/hq/gap-seal', icon: Shield },
-    { label: 'Settings', path: '/hq/settings', icon: Settings },
+    { label: 'Control Center', path: '/hq', icon: LayoutDashboard, badge: 0 },
+    { label: 'Incidents', path: '/hq/incidents', icon: AlertTriangle, badge: 7 },
+    { label: 'Comms Center', path: '/hq/communications', icon: MessageSquare, badge: 3 },
+    { label: 'Engineers', path: '/hq/engineers', icon: Users, badge: 0 },
+    { label: 'Approvals', path: '/hq/approvals', icon: CheckSquare, badge: 2 },
+    { label: 'Audit Trail', path: '/hq/audit', icon: ClipboardList, badge: 0 },
+    { label: 'Scanners', path: '/hq/scanners', icon: ScanLine, badge: 0 },
+    { label: 'Gap Seal', path: '/hq/gap-seal', icon: Bug, badge: 0 },
+    { label: 'Guidelines', path: '/hq/guidelines', icon: BookOpen, badge: 0 },
+    { label: 'Settings', path: '/hq/settings', icon: Settings, badge: 0 },
   ],
 };
 
@@ -86,19 +89,16 @@ export default function CyberLayout({ portalType }: Props) {
   const [rtConnected, setRtConnected] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  // ── Realtime connection tracking ──
   useEffect(() => {
-    const interval = setInterval(() => {
-      setRtConnected(navigator.onLine);
-    }, 5000);
+    const interval = setInterval(() => setRtConnected(navigator.onLine), 5000);
     return () => clearInterval(interval);
   }, []);
 
   const navItems = NAV_CONFIG[portalType] || NAV_CONFIG.customer;
-  const badge = ROLE_BADGE[role] || ROLE_BADGE.customer;
-  const isActive = (path: string) => location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
+  const badge = ROLE_BADGE[role] || ROLE_BADGE.public;
+  const isActive = (path: string) =>
+    location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
 
-  // ── Breadcrumb generation ──
   const crumbs = location.pathname.split('/').filter(Boolean);
 
   return (
@@ -106,7 +106,7 @@ export default function CyberLayout({ portalType }: Props) {
       {/* ════════════════ SIDEBAR ════════════════ */}
       <aside
         className={`fixed left-0 top-0 bottom-0 z-40 flex flex-col transition-all duration-300 ease-in-out border-r border-surface-border bg-void-deep ${
-          collapsed ? 'w-16' : 'w-56'
+          collapsed ? 'w-16' : 'w-60'
         }`}
       >
         {/* Logo */}
@@ -122,18 +122,18 @@ export default function CyberLayout({ portalType }: Props) {
         {/* Role Badge */}
         <div className={`px-3 pt-3 ${collapsed ? 'flex justify-center' : ''}`}>
           <div className={`flex items-center gap-2 px-2 py-1.5 rounded border ${badge.color} ${collapsed ? 'w-8 h-8 justify-center px-0' : ''}`}>
-            <badge.icon className={`w-3.5 h-3.5 shrink-0 ${collapsed ? '' : ''}`} />
+            <badge.icon className="w-3.5 h-3.5 shrink-0" />
             {!collapsed && <span className="text-[10px] font-black tracking-widest">{badge.label}</span>}
           </div>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
           {navItems.map(item => (
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-xs font-semibold transition-all duration-150 ${
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-xs font-semibold transition-all duration-150 relative ${
                 isActive(item.path)
                   ? 'bg-lime-dim text-lime border border-lime/20'
                   : 'text-text-muted hover:text-text-primary hover:bg-surface-hover/50 border border-transparent'
@@ -141,7 +141,14 @@ export default function CyberLayout({ portalType }: Props) {
               title={collapsed ? item.label : undefined}
             >
               <item.icon className="w-4 h-4 shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && <span className="truncate">{item.label}</span>}
+              {!collapsed && item.badge !== undefined && item.badge > 0 && (
+                <span className={`ml-auto text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                  isActive(item.path) ? 'bg-lime text-void-deep' : 'bg-rose text-white'
+                }`}>
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -165,12 +172,12 @@ export default function CyberLayout({ portalType }: Props) {
       </aside>
 
       {/* ════════════════ MAIN AREA ════════════════ */}
-      <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ease-in-out ${collapsed ? 'ml-16' : 'ml-56'}`}>
+      <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ease-in-out ${collapsed ? 'ml-16' : 'ml-60'}`}>
         {/* ── Top Utility Header ── */}
         <header className="h-14 bg-void-deep border-b border-surface-border flex items-center justify-between px-6 shrink-0">
-          {/* Left: Breadcrumbs */}
+          {/* Breadcrumbs */}
           <nav className="flex items-center gap-2 text-xs text-text-muted">
-            <button onClick={() => navigate(getHomePath(role))} className="hover:text-lime transition-colors">
+            <button onClick={() => navigate('/hq')} className="hover:text-lime transition-colors">
               <Zap className="w-3.5 h-3.5" />
             </button>
             {crumbs.map((crumb, i) => (
@@ -183,25 +190,20 @@ export default function CyberLayout({ portalType }: Props) {
             ))}
           </nav>
 
-          {/* Right: Connection State + Profile */}
+          {/* Right: Connection + Profile */}
           <div className="flex items-center gap-4">
-            {/* Connection Status */}
             <div className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
-              rtConnected
-                ? 'text-lime border-lime/30 bg-lime-dim'
-                : 'text-rose border-rose/30 bg-rose-dim'
+              rtConnected ? 'text-lime border-lime/30 bg-lime-dim' : 'text-rose border-rose/30 bg-rose-dim'
             }`}>
               {rtConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
               <span>{rtConnected ? 'LIVE' : 'OFFLINE'}</span>
             </div>
 
-            {/* Notification Bell */}
             <button className="relative text-text-muted hover:text-text-primary transition-colors">
               <Bell className="w-4 h-4" />
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose rounded-full" />
             </button>
 
-            {/* User Profile Dropdown */}
             <div className="relative">
               <button
                 onClick={() => setProfileOpen(!profileOpen)}
@@ -210,7 +212,7 @@ export default function CyberLayout({ portalType }: Props) {
                 <div className="w-7 h-7 rounded-full bg-lime-dim border border-lime/30 flex items-center justify-center">
                   <User className="w-3.5 h-3.5 text-lime" />
                 </div>
-                <div className={`text-left ${collapsed ? 'hidden md:block' : ''}`}>
+                <div className="text-left hidden sm:block">
                   <div className="text-[11px] font-semibold text-text-primary leading-tight">{user?.email?.split('@')[0] || 'User'}</div>
                   <div className="text-[10px] text-text-muted capitalize">{role}</div>
                 </div>
@@ -229,12 +231,8 @@ export default function CyberLayout({ portalType }: Props) {
                       </div>
                     </div>
                     <div className="py-1">
-                      <button onClick={() => { setProfileOpen(false); navigate('/' + role + '/settings'); }} className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-hover/30 transition-colors">
-                        Settings
-                      </button>
-                      <button onClick={async () => { setProfileOpen(false); await signOut(); navigate('/'); }} className="w-full text-left px-3 py-1.5 text-xs text-rose hover:text-rose hover:bg-rose-dim transition-colors">
-                        Sign Out
-                      </button>
+                      <button onClick={() => { setProfileOpen(false); navigate('/hq/settings'); }} className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-hover/30 transition-colors">Settings</button>
+                      <button onClick={async () => { setProfileOpen(false); await signOut(); navigate('/'); }} className="w-full text-left px-3 py-1.5 text-xs text-rose hover:text-rose hover:bg-rose-dim transition-colors">Sign Out</button>
                     </div>
                   </div>
                 </>
@@ -250,14 +248,4 @@ export default function CyberLayout({ portalType }: Props) {
       </div>
     </div>
   );
-}
-
-function getHomePath(role: string): string {
-  switch (role) {
-    case 'customer': return '/customer';
-    case 'engineer': return '/engineer';
-    case 'coordinator':
-    case 'admin': return '/hq';
-    default: return '/';
-  }
 }

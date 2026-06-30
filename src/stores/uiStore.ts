@@ -45,9 +45,14 @@ interface UIState {
 
 let toastCounter = 0;
 
+import type { StoreApi } from 'zustand';
+
+type SetFunc = StoreApi<UIState>['setState'];
+type GetFunc = StoreApi<UIState>['getState'];
+
 export const useUIStore = create<UIState>()(
   persist(
-    (set, get) => ({
+    (set: SetFunc, get: GetFunc) => ({
       isNotificationsOpen: false,
       isMobileMenuOpen: false,
       isSidebarCollapsed: false,
@@ -58,39 +63,36 @@ export const useUIStore = create<UIState>()(
       globalLoadingMessage: '',
 
       toggleNotifications: () =>
-        set((s) => ({ isNotificationsOpen: !s.isNotificationsOpen })),
+        set((s: UIState) => ({ isNotificationsOpen: !s.isNotificationsOpen })),
 
-      setNotificationsOpen: (open) => set({ isNotificationsOpen: open }),
+      setNotificationsOpen: (open: boolean) => set({ isNotificationsOpen: open }),
 
       toggleMobileMenu: () =>
-        set((s) => ({ isMobileMenuOpen: !s.isMobileMenuOpen })),
+        set((s: UIState) => ({ isMobileMenuOpen: !s.isMobileMenuOpen })),
 
       toggleSidebar: () =>
-        set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
+        set((s: UIState) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
 
-      openModal: (modal, data) => set({ activeModal: modal, modalData: data || null }),
+      openModal: (modal: string, data?: Record<string, unknown>) => set({ activeModal: modal, modalData: data || null }),
 
       closeModal: () => set({ activeModal: null, modalData: null }),
 
-      addToast: (toast) => {
+      addToast: (toast: Omit<Toast, 'id'>) => {
         const id = `toast-${++toastCounter}-${Date.now()}`;
         const newToast: Toast = { ...toast, id };
-        set((s) => ({ toasts: [...s.toasts, newToast] }));
-        // Auto-remove
-        setTimeout(() => {
-          get().removeToast(id);
-        }, toast.duration);
+        set((s: UIState) => ({ toasts: [...s.toasts, newToast] }));
+        setTimeout(() => { get().removeToast(id); }, toast.duration);
       },
 
-      removeToast: (id) =>
-        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+      removeToast: (id: string) =>
+        set((s: UIState) => ({ toasts: s.toasts.filter((t: Toast) => t.id !== id) })),
 
-      setGlobalLoading: (loading, message = '') =>
+      setGlobalLoading: (loading: boolean, message = '') =>
         set({ isGlobalLoading: loading, globalLoadingMessage: message }),
     }),
     {
       name: 'uptimeops-ui',
-      partialize: (state) => ({
+      partialize: (state: UIState) => ({
         isSidebarCollapsed: state.isSidebarCollapsed,
       }),
     }
