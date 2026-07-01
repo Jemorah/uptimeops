@@ -1,11 +1,10 @@
 // ═══════════════════════════════════════════════════════════════
 // PORTAL SWITCHER — Dev/testing tool for preview deployments
-// Allows switching between Customer/HQ/Engineer portals
-// Only shows on non-production domains (Vercel previews, localhost)
 // ═══════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, Shield, HardHat, X, Globe } from 'lucide-react';
+import { getCurrentPortal } from '@/hooks/useSubdomain';
 
 const PORTALS = [
   { id: 'landing', label: 'Landing', icon: Globe, color: '#94a3b8' },
@@ -16,18 +15,12 @@ const PORTALS = [
 
 export function PortalSwitcher() {
   const [visible, setVisible] = useState(false);
-  const [current, setCurrent] = useState('landing');
+  const currentPortal = getCurrentPortal().portal;
 
   useEffect(() => {
-    // Only show on preview deployments or localhost
     const host = window.location.hostname;
     const isPreview = host.includes('vercel.app') || host === 'localhost' || host === '127.0.0.1';
     if (!isPreview) return;
-
-    // Check current portal from localStorage
-    const override = localStorage.getItem('portal_override');
-    if (override) setCurrent(override);
-
     setVisible(true);
   }, []);
 
@@ -39,7 +32,8 @@ export function PortalSwitcher() {
     } else {
       localStorage.setItem('portal_override', portalId);
     }
-    window.location.href = window.location.pathname; // reload without query params
+    // Force full page reload — critical for HashRouter + portal change
+    window.location.reload();
   };
 
   return (
@@ -48,7 +42,7 @@ export function PortalSwitcher() {
         <span className="text-[9px] font-bold uppercase tracking-wider text-white/30 mr-1">Portal:</span>
         {PORTALS.map(p => {
           const Icon = p.icon;
-          const isActive = current === p.id;
+          const isActive = currentPortal === p.id;
           return (
             <button
               key={p.id}

@@ -8,6 +8,7 @@ import CyberLayout from '@/layouts/CyberLayout';
 import AuthLayout from '@/layouts/AuthLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { getCurrentPortal } from '@/hooks/useSubdomain';
+import { PortalSwitcher } from '@/components/PortalSwitcher';
 
 // ── Public pages ──
 const LandingPage      = lazy(() => import('@/pages/public/LandingPage').then(m => ({ default: m.LandingPage })));
@@ -187,10 +188,19 @@ function LandingRoutes() {
 export default function App() {
   const portal = useMemo(() => getCurrentPortal(), []);
 
-  switch (portal.portal) {
-    case 'customer': return <CustomerRoutes />;
-    case 'hq':       return <HQRoutes />;
-    case 'engineer': return <EngineerRoutes />;
-    default:         return <LandingRoutes />;
-  }
+  const routes = (() => {
+    switch (portal.portal) {
+      case 'customer': return <CustomerRoutes />;
+      case 'hq':       return <HQRoutes />;
+      case 'engineer': return <EngineerRoutes />;
+      default:         return <LandingRoutes />;
+    }
+  })();
+
+  return (
+    <>
+      {routes}
+      <PortalSwitcher />
+    </>
+  );
 }
