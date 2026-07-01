@@ -1,6 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
 // APP v2.5 — Subdomain-Aware Unified Routing
-// Routes change based on hostname — no prefix needed on subdomains
 // ═══════════════════════════════════════════════════════════════
 
 import { lazy, useMemo } from 'react';
@@ -53,24 +52,15 @@ const EngineerOnCall    = lazy(() => import('@/pages/engineer/EngineerOnCall').t
 const EngineerSecurity  = lazy(() => import('@/pages/engineer/EngineerSecurity').then(m => ({ default: m.EngineerSecurity })));
 const EngineerSettings  = lazy(() => import('@/pages/engineer/EngineerSettings').then(m => ({ default: m.EngineerSettings })));
 
-// ═══════════════════════════════════════════════════════════════
-// SHARED AUTH ROUTES
-// ═══════════════════════════════════════════════════════════════
-function SharedAuthRoutes() {
-  return (
-    <>
-      <Route path="/login" element={<AuthLayout><AuthConsole /></AuthLayout>} />
-      <Route path="/signup" element={<AuthLayout><AuthConsole /></AuthLayout>} />
-      <Route path="/forgot-password" element={<AuthLayout><ForgotPassword /></AuthLayout>} />
-      <Route path="/reset-password" element={<AuthLayout><ResetPassword /></AuthLayout>} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-    </>
-  );
-}
+// ── Auth routes (used inline in each portal — must be literal <Route> children) ──
+const AUTH_LOGIN        = <Route path="/login" element={<AuthLayout><AuthConsole /></AuthLayout>} />;
+const AUTH_SIGNUP       = <Route path="/signup" element={<AuthLayout><AuthConsole /></AuthLayout>} />;
+const AUTH_FORGOT       = <Route path="/forgot-password" element={<AuthLayout><ForgotPassword /></AuthLayout>} />;
+const AUTH_RESET        = <Route path="/reset-password" element={<AuthLayout><ResetPassword /></AuthLayout>} />;
+const AUTH_CALLBACK     = <Route path="/auth/callback" element={<AuthCallback />} />;
 
 // ═══════════════════════════════════════════════════════════════
 // CUSTOMER PORTAL — app.uptimeops.org
-// Routes WITHOUT /customer prefix
 // ═══════════════════════════════════════════════════════════════
 function CustomerRoutes() {
   return (
@@ -85,11 +75,10 @@ function CustomerRoutes() {
         <Route path="/communications" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCommunications /></ProtectedRoute>} />
         <Route path="/security" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSecurity /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSettings /></ProtectedRoute>} />
-        {/* Legacy redirects */}
         <Route path="/billing" element={<Navigate to="/payments" replace />} />
         <Route path="/vault" element={<Navigate to="/credentials" replace />} />
       </Route>
-      <SharedAuthRoutes />
+      {AUTH_LOGIN}{AUTH_SIGNUP}{AUTH_FORGOT}{AUTH_RESET}{AUTH_CALLBACK}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -97,7 +86,6 @@ function CustomerRoutes() {
 
 // ═══════════════════════════════════════════════════════════════
 // HQ PORTAL — dashboard.uptimeops.org
-// Routes WITHOUT /hq prefix
 // ═══════════════════════════════════════════════════════════════
 function HQRoutes() {
   return (
@@ -114,7 +102,7 @@ function HQRoutes() {
         <Route path="/guidelines" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQGuidelines /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQSettings /></ProtectedRoute>} />
       </Route>
-      <SharedAuthRoutes />
+      {AUTH_LOGIN}{AUTH_SIGNUP}{AUTH_FORGOT}{AUTH_RESET}{AUTH_CALLBACK}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -122,7 +110,6 @@ function HQRoutes() {
 
 // ═══════════════════════════════════════════════════════════════
 // ENGINEER PORTAL — engineers.uptimeops.org
-// Routes WITHOUT /engineer prefix
 // ═══════════════════════════════════════════════════════════════
 function EngineerRoutes() {
   return (
@@ -137,7 +124,7 @@ function EngineerRoutes() {
         <Route path="/security" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSecurity /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSettings /></ProtectedRoute>} />
       </Route>
-      <SharedAuthRoutes />
+      {AUTH_LOGIN}{AUTH_SIGNUP}{AUTH_FORGOT}{AUTH_RESET}{AUTH_CALLBACK}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -145,7 +132,6 @@ function EngineerRoutes() {
 
 // ═══════════════════════════════════════════════════════════════
 // LANDING — www.uptimeops.org (fallback)
-// Full prefixed routes for cross-portal deep links
 // ═══════════════════════════════════════════════════════════════
 function LandingRoutes() {
   return (
@@ -155,8 +141,8 @@ function LandingRoutes() {
       <Route path="/emergency" element={<EmergencyPage />} />
       <Route path="/status" element={<StatusPage />} />
       <Route path="/engineer/onboard" element={<EngineerOnboard />} />
-      <SharedAuthRoutes />
-      {/* Portal deep-links (with full prefix on landing domain) */}
+      {AUTH_LOGIN}{AUTH_SIGNUP}{AUTH_FORGOT}{AUTH_RESET}{AUTH_CALLBACK}
+      {/* Deep-links with full prefix on landing domain */}
       <Route element={<CyberLayout portalType="admin" />}>
         <Route path="/hq" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQDashboard /></ProtectedRoute>} />
         <Route path="/hq/incidents" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQIncidents /></ProtectedRoute>} />
@@ -196,7 +182,7 @@ function LandingRoutes() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN — Subdomain-based route selection
+// MAIN
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
   const portal = useMemo(() => getCurrentPortal(), []);
