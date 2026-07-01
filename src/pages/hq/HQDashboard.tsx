@@ -258,6 +258,178 @@ export function HQDashboard() {
           </section>
         </div>
       </div>
+
+      {/* ═══ QUICK ACTIONS ROW ═══ */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <QuickActionButton label="Approve Fix" icon={ShieldCheck} color="#a3e635" onClick={() => navigate('/hq/approvals')} badge={approvalsPending} />
+        <QuickActionButton label="View Engineers" icon={Users} color="#22d3ee" onClick={() => navigate('/hq/engineers')} />
+        <QuickActionButton label="Run Gap Seal" icon={Activity} color="#e879f9" onClick={() => navigate('/hq/gap-seal')} />
+        <QuickActionButton label="Export Audit" icon={CheckCircle2} color="#10b981" onClick={() => handleExportAudit()} />
+      </div>
+
+      {/* ═══ SECOND ROW: Emergency Leads + Scanner Health + Findings Heatmap ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Emergency Leads */}
+        <div className="glass-surface p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-magenta" /> Emergency Leads
+            </h2>
+            <span className="text-[10px] font-mono text-magenta animate-pulse">● LIVE</span>
+          </div>
+          <EmergencyLeadsPanel />
+        </div>
+
+        {/* Scanner Health */}
+        <div className="glass-surface p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2">
+              <Wifi className="w-4 h-4 text-cyan" /> 42-Scanner Health
+            </h2>
+            <span className="text-[10px] font-bold text-lime">42/42 active</span>
+          </div>
+          <ScannerHealthWidget />
+        </div>
+
+        {/* Findings Heatmap */}
+        <div className="glass-surface p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-magenta" /> Findings Heatmap
+            </h2>
+          </div>
+          <FindingsHeatmap />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function handleExportAudit() {
+  const data = [
+    ['ID', 'Timestamp', 'Actor', 'Action', 'Target', 'Severity'],
+    ['AUD-2847', new Date().toISOString(), 'AI Triage', 'AGENT_STARTED', 'INC-001847', 'info'],
+    ['AUD-2846', new Date().toISOString(), 'AI Isolate', 'SANDBOX_CREATED', 'SBX-7f3a', 'info'],
+    ['AUD-2845', new Date().toISOString(), 'AI Repair', 'PATCH_GENERATED', 'PATCH-2847', 'info'],
+  ];
+  const csv = data.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `audit-${new Date().toISOString().split('T')[0]}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Quick Action Button ──
+function QuickActionButton({ label, icon: Icon, color, onClick, badge }: { label: string; icon: React.ElementType; color: string; onClick: () => void; badge?: number }) {
+  return (
+    <button onClick={onClick} className="relative flex items-center gap-3 p-4 bg-elevated/60 border border-white/5 rounded-xl hover:bg-white/[0.04] hover:border-white/10 transition-all text-left group">
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}15` }}>
+        <Icon className="w-4 h-4" style={{ color }} />
+      </div>
+      <div>
+        <span className="text-xs font-bold text-white/70 group-hover:text-white transition-colors">{label}</span>
+        {badge !== undefined && badge > 0 && <span className="ml-2 text-[9px] font-black text-magenta bg-magenta/10 px-1.5 py-0.5 rounded">{badge}</span>}
+      </div>
+    </button>
+  );
+}
+
+// ── Emergency Leads Panel ──
+function EmergencyLeadsPanel() {
+  const [leads] = useState([
+    { id: 'EL-001', name: 'TechFlow Inc', email: 'urgent@techflow.io', tier: 'Fortress', issue: 'Complete site outage — 502 errors', severity: 'critical', time: new Date(Date.now() - 300000).toISOString() },
+    { id: 'EL-002', name: 'DataVault Corp', email: 'ops@datavault.io', tier: 'Sentinel', issue: 'SSL cert expires in 6h', severity: 'high', time: new Date(Date.now() - 900000).toISOString() },
+    { id: 'EL-003', name: 'CloudMesh', email: 'admin@cloudmesh.io', tier: 'Fortress', issue: 'DB primary failover', severity: 'critical', time: new Date(Date.now() - 1200000).toISOString() },
+  ]);
+
+  return (
+    <div className="space-y-2 max-h-[280px] overflow-y-auto">
+      {leads.map(lead => (
+        <div key={lead.id} className="p-3 bg-void-light/50 rounded-lg border border-magenta/15 hover:border-magenta/30 transition-all">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-magenta animate-pulse" />
+            <span className="text-[9px] font-mono text-white/25">{lead.id}</span>
+            <span className="text-[8px] font-black uppercase px-1 py-0.5 rounded bg-magenta/10 text-magenta ml-auto">{lead.severity}</span>
+          </div>
+          <p className="text-[11px] font-bold text-white/70">{lead.name}</p>
+          <p className="text-[10px] text-white/40">{lead.issue}</p>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-[8px] text-white/20 font-mono">{lead.email}</span>
+            <span className="text-[8px] text-white/15">{Math.floor((Date.now() - new Date(lead.time).getTime()) / 60000)}m ago</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Scanner Health Widget ──
+function ScannerHealthWidget() {
+  const categories = [
+    { name: 'Infrastructure', active: 6, updating: 0, failed: 0, color: '#a3e635' },
+    { name: 'SSL/TLS', active: 6, updating: 1, failed: 0, color: '#22d3ee' },
+    { name: 'DNS', active: 6, updating: 0, failed: 0, color: '#e879f9' },
+    { name: 'Auth', active: 6, updating: 0, failed: 0, color: '#f43f5e' },
+    { name: 'Database', active: 6, updating: 1, failed: 0, color: '#fbbf24' },
+    { name: 'Edge', active: 5, updating: 1, failed: 0, color: '#a78bfa' },
+    { name: 'Network', active: 6, updating: 0, failed: 0, color: '#34d399' },
+    { name: 'Containers', active: 1, updating: 0, failed: 0, color: '#fb923c' },
+  ];
+  return (
+    <div className="space-y-2">
+      {categories.map(cat => (
+        <div key={cat.name} className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+          <span className="text-[10px] text-white/40 flex-1">{cat.name}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-bold text-lime">{cat.active}</span>
+            {cat.updating > 0 && <span className="text-[9px] text-amber animate-pulse">{cat.updating}◌</span>}
+            {cat.failed > 0 && <span className="text-[9px] text-magenta">{cat.failed}✕</span>}
+          </div>
+        </div>
+      ))}
+      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px]">
+        <span className="text-white/30">Total: <span className="text-lime font-bold">42 active</span></span>
+        <span className="text-amber">3 updating</span>
+        <span className="text-lime">0 failed</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Findings Heatmap ──
+function FindingsHeatmap() {
+  const severities = ['Critical', 'High', 'Medium', 'Low', 'Info'];
+  const scanners = ['Infra', 'SSL', 'DNS', 'Auth', 'DB', 'Edge', 'Net', 'Container'];
+  const colors: Record<string, string> = { '0': 'transparent', '1': '#a3e63530', '2': '#fbbf2430', '3': '#f43f5e60', '4': '#f43f5e' };
+  const data = scanners.map(() => severities.map(() => Math.floor(Math.random() * 5)));
+
+  return (
+    <div>
+      <div className="flex items-center gap-0.5">
+        {/* Y-axis labels */}
+        <div className="flex flex-col gap-0.5 mr-1">
+          {severities.map(s => <div key={s} className="h-5 flex items-center"><span className="text-[7px] text-white/20 w-8 text-right pr-1">{s.slice(0,3)}</span></div>)}
+        </div>
+        {/* Grid */}
+        <div className="flex-1">
+          {data.map((row, ri) => (
+            <div key={ri} className="flex gap-0.5">
+              {row.map((val, ci) => (
+                <div key={ci} className="flex-1 h-5 rounded-sm transition-all hover:opacity-80 cursor-pointer group relative" style={{ backgroundColor: colors[String(val)] || 'transparent' }}>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 text-[7px] text-white/50 opacity-0 group-hover:opacity-100 bg-black/70 px-1 rounded whitespace-nowrap z-10">
+                    {scanners[ci]} · {severities[ri]}: {val}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* X-axis labels */}
+      <div className="flex gap-0.5 mt-1 ml-9">
+        {scanners.map(s => <div key={s} className="flex-1 text-center"><span className="text-[7px] text-white/15">{s.slice(0,3)}</span></div>)}
+      </div>
     </div>
   );
 }
