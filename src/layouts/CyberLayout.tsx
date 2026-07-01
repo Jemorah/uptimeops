@@ -3,10 +3,11 @@
 // 12-item collapsible sidebar + top utility header + breadcrumbs
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
+import { getCurrentPortal } from '@/hooks/useSubdomain';
 import {
   LayoutDashboard, AlertTriangle,
   MessageSquare, Settings, LogOut, Zap, Terminal, CreditCard,
@@ -95,7 +96,20 @@ export default function CyberLayout({ portalType }: Props) {
     return () => clearInterval(interval);
   }, []);
 
-  const navItems = NAV_CONFIG[portalType] || NAV_CONFIG.customer;
+  // Subdomain-aware nav path transformation
+  // On app.uptimeops.org, /customer/incidents → /incidents
+  const portalConfig = getCurrentPortal();
+  const navItems = useMemo(() => {
+    const items = NAV_CONFIG[portalType] || NAV_CONFIG.customer;
+    if (portalConfig.basePath === '') return items; // landing domain — no prefix stripping
+    // Strip portal prefix from paths on subdomains
+    const prefix = portalConfig.basePath;
+    return items.map((item: NavItem) => ({
+      ...item,
+      path: item.path.startsWith(prefix + '/') ? item.path.slice(prefix.length) : item.path === prefix ? '/' : item.path,
+    }));
+  }, [portalType, portalConfig]);
+
   const badge = ROLE_BADGE[role] || ROLE_BADGE.public;
   const isActive = (path: string) =>
     location.pathname === path || (path !== '/' && location.pathname.startsWith(path));

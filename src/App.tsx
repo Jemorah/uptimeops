@@ -1,14 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
-// APP v2.5 — Full-Stack Customer Portal + HQ + Engineer
-// app.uptimeops.org subdomain routes for Customer Portal
+// APP v2.5 — Subdomain-Aware Unified Routing
+// Routes change based on hostname — no prefix needed on subdomains
 // ═══════════════════════════════════════════════════════════════
 
-import { lazy, Suspense } from 'react';
+import { lazy, useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { LoadingScreen } from '@/components/LoadingScreen';
 import CyberLayout from '@/layouts/CyberLayout';
 import AuthLayout from '@/layouts/AuthLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { getCurrentPortal } from '@/hooks/useSubdomain';
 
 // ── Public pages ──
 const LandingPage      = lazy(() => import('@/pages/public/LandingPage').then(m => ({ default: m.LandingPage })));
@@ -33,7 +33,7 @@ const HQScanners       = lazy(() => import('@/pages/hq/HQScanners').then(m => ({
 const HQGuidelines     = lazy(() => import('@/pages/hq/HQGuidelines').then(m => ({ default: m.HQGuidelines })));
 const HQSettings       = lazy(() => import('@/pages/hq/HQSettings').then(m => ({ default: m.HQSettings })));
 
-// ── Customer Portal (app.uptimeops.org) ──
+// ── Customer Portal ──
 const CustomerOnboarding    = lazy(() => import('@/pages/customer/CustomerOnboarding').then(m => ({ default: m.CustomerOnboarding })));
 const CustomerDashboard     = lazy(() => import('@/pages/customer/CustomerDashboard').then(m => ({ default: m.CustomerDashboard })));
 const CustomerIncidents     = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
@@ -53,67 +53,158 @@ const EngineerOnCall    = lazy(() => import('@/pages/engineer/EngineerOnCall').t
 const EngineerSecurity  = lazy(() => import('@/pages/engineer/EngineerSecurity').then(m => ({ default: m.EngineerSecurity })));
 const EngineerSettings  = lazy(() => import('@/pages/engineer/EngineerSettings').then(m => ({ default: m.EngineerSettings })));
 
-export default function App() {
+// ═══════════════════════════════════════════════════════════════
+// SHARED AUTH ROUTES
+// ═══════════════════════════════════════════════════════════════
+function SharedAuthRoutes() {
   return (
-    <Suspense fallback={<LoadingScreen />}>
-      <Routes>
-        {/* ═══ PUBLIC ═══ */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/login" element={<AuthLayout><AuthConsole /></AuthLayout>} />
-        <Route path="/signup" element={<AuthLayout><AuthConsole /></AuthLayout>} />
-        <Route path="/forgot-password" element={<AuthLayout><ForgotPassword /></AuthLayout>} />
-        <Route path="/reset-password" element={<AuthLayout><ResetPassword /></AuthLayout>} />
-        <Route path="/pricing" element={<PricingPage />} />
-        <Route path="/emergency" element={<EmergencyPage />} />
-        <Route path="/status" element={<StatusPage />} />
-        <Route path="/engineer/onboard" element={<EngineerOnboard />} />
-
-        {/* ═══ HQ PORTAL (dashboard.uptimeops.org) ═══ */}
-        <Route element={<CyberLayout portalType="admin" />}>
-          <Route path="/hq" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQDashboard /></ProtectedRoute>} />
-          <Route path="/hq/incidents" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQIncidents /></ProtectedRoute>} />
-          <Route path="/hq/approvals" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQApprovals /></ProtectedRoute>} />
-          <Route path="/hq/engineers" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQEngineers /></ProtectedRoute>} />
-          <Route path="/hq/audit" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQAudit /></ProtectedRoute>} />
-          <Route path="/hq/communications" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQCommunications /></ProtectedRoute>} />
-          <Route path="/hq/gap-seal" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><GapSealAudit /></ProtectedRoute>} />
-          <Route path="/hq/scanners" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQScanners /></ProtectedRoute>} />
-          <Route path="/hq/guidelines" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQGuidelines /></ProtectedRoute>} />
-          <Route path="/hq/settings" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQSettings /></ProtectedRoute>} />
-        </Route>
-
-        {/* ═══ CUSTOMER PORTAL (app.uptimeops.org) ═══ */}
-        <Route element={<CyberLayout portalType="customer" />}>
-          <Route path="/customer/onboard" element={<ProtectedRoute allowedRoles={['customer']}><CustomerOnboarding /></ProtectedRoute>} />
-          <Route path="/customer" element={<ProtectedRoute allowedRoles={['customer']}><CustomerDashboard /></ProtectedRoute>} />
-          <Route path="/customer/incidents" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
-          <Route path="/customer/incidents/:id" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
-          <Route path="/customer/payments" element={<ProtectedRoute allowedRoles={['customer']}><CustomerPayments /></ProtectedRoute>} />
-          <Route path="/customer/credentials" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCredentials /></ProtectedRoute>} />
-          <Route path="/customer/communications" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCommunications /></ProtectedRoute>} />
-          <Route path="/customer/security" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSecurity /></ProtectedRoute>} />
-          <Route path="/customer/settings" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSettings /></ProtectedRoute>} />
-          {/* Legacy redirects */}
-          <Route path="/customer/billing" element={<Navigate to="/customer/payments" replace />} />
-          <Route path="/customer/vault" element={<Navigate to="/customer/credentials" replace />} />
-        </Route>
-
-        {/* ═══ ENGINEER PORTAL (engineers.uptimeops.org) ═══ */}
-        <Route element={<CyberLayout portalType="engineer" />}>
-          <Route path="/engineer" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerDashboard /></ProtectedRoute>} />
-          <Route path="/engineer/sessions" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSessions /></ProtectedRoute>} />
-          <Route path="/engineer/workspace" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerWorkspace /></ProtectedRoute>} />
-          <Route path="/engineer/workspace/:incidentId" element={<ProtectedRoute allowedRoles={['engineer']}><IncidentWorkspace /></ProtectedRoute>} />
-          <Route path="/engineer/audit" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerAudit /></ProtectedRoute>} />
-          <Route path="/engineer/oncall" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerOnCall /></ProtectedRoute>} />
-          <Route path="/engineer/security" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSecurity /></ProtectedRoute>} />
-          <Route path="/engineer/settings" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSettings /></ProtectedRoute>} />
-        </Route>
-
-        {/* ═══ Fallback ═══ */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+    <>
+      <Route path="/login" element={<AuthLayout><AuthConsole /></AuthLayout>} />
+      <Route path="/signup" element={<AuthLayout><AuthConsole /></AuthLayout>} />
+      <Route path="/forgot-password" element={<AuthLayout><ForgotPassword /></AuthLayout>} />
+      <Route path="/reset-password" element={<AuthLayout><ResetPassword /></AuthLayout>} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
+    </>
   );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOMER PORTAL — app.uptimeops.org
+// Routes WITHOUT /customer prefix
+// ═══════════════════════════════════════════════════════════════
+function CustomerRoutes() {
+  return (
+    <Routes>
+      <Route element={<CyberLayout portalType="customer" />}>
+        <Route path="/" element={<ProtectedRoute allowedRoles={['customer']}><CustomerDashboard /></ProtectedRoute>} />
+        <Route path="/onboard" element={<ProtectedRoute allowedRoles={['customer']}><CustomerOnboarding /></ProtectedRoute>} />
+        <Route path="/incidents" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
+        <Route path="/incidents/:id" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
+        <Route path="/payments" element={<ProtectedRoute allowedRoles={['customer']}><CustomerPayments /></ProtectedRoute>} />
+        <Route path="/credentials" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCredentials /></ProtectedRoute>} />
+        <Route path="/communications" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCommunications /></ProtectedRoute>} />
+        <Route path="/security" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSecurity /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSettings /></ProtectedRoute>} />
+        {/* Legacy redirects */}
+        <Route path="/billing" element={<Navigate to="/payments" replace />} />
+        <Route path="/vault" element={<Navigate to="/credentials" replace />} />
+      </Route>
+      <SharedAuthRoutes />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HQ PORTAL — dashboard.uptimeops.org
+// Routes WITHOUT /hq prefix
+// ═══════════════════════════════════════════════════════════════
+function HQRoutes() {
+  return (
+    <Routes>
+      <Route element={<CyberLayout portalType="admin" />}>
+        <Route path="/" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQDashboard /></ProtectedRoute>} />
+        <Route path="/incidents" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQIncidents /></ProtectedRoute>} />
+        <Route path="/approvals" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQApprovals /></ProtectedRoute>} />
+        <Route path="/engineers" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQEngineers /></ProtectedRoute>} />
+        <Route path="/audit" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQAudit /></ProtectedRoute>} />
+        <Route path="/communications" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQCommunications /></ProtectedRoute>} />
+        <Route path="/gap-seal" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><GapSealAudit /></ProtectedRoute>} />
+        <Route path="/scanners" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQScanners /></ProtectedRoute>} />
+        <Route path="/guidelines" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQGuidelines /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQSettings /></ProtectedRoute>} />
+      </Route>
+      <SharedAuthRoutes />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINEER PORTAL — engineers.uptimeops.org
+// Routes WITHOUT /engineer prefix
+// ═══════════════════════════════════════════════════════════════
+function EngineerRoutes() {
+  return (
+    <Routes>
+      <Route element={<CyberLayout portalType="engineer" />}>
+        <Route path="/" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerDashboard /></ProtectedRoute>} />
+        <Route path="/sessions" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSessions /></ProtectedRoute>} />
+        <Route path="/workspace" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerWorkspace /></ProtectedRoute>} />
+        <Route path="/workspace/:incidentId" element={<ProtectedRoute allowedRoles={['engineer']}><IncidentWorkspace /></ProtectedRoute>} />
+        <Route path="/audit" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerAudit /></ProtectedRoute>} />
+        <Route path="/oncall" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerOnCall /></ProtectedRoute>} />
+        <Route path="/security" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSecurity /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSettings /></ProtectedRoute>} />
+      </Route>
+      <SharedAuthRoutes />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LANDING — www.uptimeops.org (fallback)
+// Full prefixed routes for cross-portal deep links
+// ═══════════════════════════════════════════════════════════════
+function LandingRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/pricing" element={<PricingPage />} />
+      <Route path="/emergency" element={<EmergencyPage />} />
+      <Route path="/status" element={<StatusPage />} />
+      <Route path="/engineer/onboard" element={<EngineerOnboard />} />
+      <SharedAuthRoutes />
+      {/* Portal deep-links (with full prefix on landing domain) */}
+      <Route element={<CyberLayout portalType="admin" />}>
+        <Route path="/hq" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQDashboard /></ProtectedRoute>} />
+        <Route path="/hq/incidents" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQIncidents /></ProtectedRoute>} />
+        <Route path="/hq/approvals" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQApprovals /></ProtectedRoute>} />
+        <Route path="/hq/engineers" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQEngineers /></ProtectedRoute>} />
+        <Route path="/hq/audit" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQAudit /></ProtectedRoute>} />
+        <Route path="/hq/communications" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQCommunications /></ProtectedRoute>} />
+        <Route path="/hq/gap-seal" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><GapSealAudit /></ProtectedRoute>} />
+        <Route path="/hq/scanners" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQScanners /></ProtectedRoute>} />
+        <Route path="/hq/guidelines" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQGuidelines /></ProtectedRoute>} />
+        <Route path="/hq/settings" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQSettings /></ProtectedRoute>} />
+      </Route>
+      <Route element={<CyberLayout portalType="customer" />}>
+        <Route path="/customer/onboard" element={<ProtectedRoute allowedRoles={['customer']}><CustomerOnboarding /></ProtectedRoute>} />
+        <Route path="/customer" element={<ProtectedRoute allowedRoles={['customer']}><CustomerDashboard /></ProtectedRoute>} />
+        <Route path="/customer/incidents" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
+        <Route path="/customer/incidents/:id" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
+        <Route path="/customer/payments" element={<ProtectedRoute allowedRoles={['customer']}><CustomerPayments /></ProtectedRoute>} />
+        <Route path="/customer/credentials" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCredentials /></ProtectedRoute>} />
+        <Route path="/customer/communications" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCommunications /></ProtectedRoute>} />
+        <Route path="/customer/security" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSecurity /></ProtectedRoute>} />
+        <Route path="/customer/settings" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSettings /></ProtectedRoute>} />
+      </Route>
+      <Route element={<CyberLayout portalType="engineer" />}>
+        <Route path="/engineer" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerDashboard /></ProtectedRoute>} />
+        <Route path="/engineer/sessions" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSessions /></ProtectedRoute>} />
+        <Route path="/engineer/workspace" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerWorkspace /></ProtectedRoute>} />
+        <Route path="/engineer/workspace/:incidentId" element={<ProtectedRoute allowedRoles={['engineer']}><IncidentWorkspace /></ProtectedRoute>} />
+        <Route path="/engineer/audit" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerAudit /></ProtectedRoute>} />
+        <Route path="/engineer/oncall" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerOnCall /></ProtectedRoute>} />
+        <Route path="/engineer/security" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSecurity /></ProtectedRoute>} />
+        <Route path="/engineer/settings" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSettings /></ProtectedRoute>} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN — Subdomain-based route selection
+// ═══════════════════════════════════════════════════════════════
+export default function App() {
+  const portal = useMemo(() => getCurrentPortal(), []);
+
+  switch (portal.portal) {
+    case 'customer': return <CustomerRoutes />;
+    case 'hq':       return <HQRoutes />;
+    case 'engineer': return <EngineerRoutes />;
+    default:         return <LandingRoutes />;
+  }
 }
