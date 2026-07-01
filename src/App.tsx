@@ -4,6 +4,7 @@
 
 import { lazy, useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import CyberLayout from '@/layouts/CyberLayout';
 import AuthLayout from '@/layouts/AuthLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -187,10 +188,17 @@ function LandingRoutes() {
 export default function App() {
   const portal = useMemo(() => getCurrentPortal(), []);
 
-  switch (portal.portal) {
-    case 'customer': return <CustomerRoutes />;
-    case 'hq':       return <HQRoutes />;
-    case 'engineer': return <EngineerRoutes />;
-    default:         return <LandingRoutes />;
-  }
+  return (
+    <>
+      {(() => {
+        switch (portal.portal) {
+          case 'customer': return <CustomerRoutes />;
+          case 'hq':       return <HQRoutes />;
+          case 'engineer': return <EngineerRoutes />;
+          default:         return <LandingRoutes />;
+        }
+      })()}
+      <SpeedInsights />
+    </>
+  );
 }
