@@ -28,9 +28,10 @@ const NAV_CONFIG: Record<string, NavItem[]> = {
   customer: [
     { label: 'Dashboard', path: '/customer', icon: LayoutDashboard },
     { label: 'Incidents', path: '/customer/incidents', icon: AlertTriangle, badge: 3 },
-    { label: 'Vault', path: '/customer/vault', icon: Lock },
+    { label: 'Messages', path: '/customer/communications', icon: MessageSquare, badge: 2 },
+    { label: 'Credentials', path: '/customer/credentials', icon: Lock },
     { label: 'Security', path: '/customer/security', icon: ShieldCheck },
-    { label: 'Billing', path: '/customer/billing', icon: CreditCard },
+    { label: 'Payments', path: '/customer/payments', icon: CreditCard },
     { label: 'Settings', path: '/customer/settings', icon: Settings },
   ],
   engineer: [

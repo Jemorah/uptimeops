@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// APP — Unified Routes for v2.2
-// All routes use CyberLayout with unified design system
+// APP v2.5 — Full-Stack Customer Portal + HQ + Engineer
+// app.uptimeops.org subdomain routes for Customer Portal
 // ═══════════════════════════════════════════════════════════════
 
 import { lazy, Suspense } from 'react';
@@ -21,7 +21,7 @@ const EmergencyPage    = lazy(() => import('@/pages/public/EmergencyPage').then(
 const StatusPage       = lazy(() => import('@/pages/public/StatusPage').then(m => ({ default: m.StatusPage })));
 const EngineerOnboard  = lazy(() => import('@/pages/engineer/EngineerOnboarding').then(m => ({ default: m.EngineerOnboarding })));
 
-// ── HQ pages (Interface C) ──
+// ── HQ pages ──
 const HQDashboard      = lazy(() => import('@/pages/hq/HQDashboard').then(m => ({ default: m.HQDashboard })));
 const HQIncidents      = lazy(() => import('@/pages/hq/HQIncidents').then(m => ({ default: m.HQIncidents })));
 const HQApprovals      = lazy(() => import('@/pages/hq/HQApprovals').then(m => ({ default: m.HQApprovals })));
@@ -33,16 +33,17 @@ const HQScanners       = lazy(() => import('@/pages/hq/HQScanners').then(m => ({
 const HQGuidelines     = lazy(() => import('@/pages/hq/HQGuidelines').then(m => ({ default: m.HQGuidelines })));
 const HQSettings       = lazy(() => import('@/pages/hq/HQSettings').then(m => ({ default: m.HQSettings })));
 
-// ── Customer pages (Interface A) ──
-const CustomerDashboard = lazy(() => import('@/pages/customer/CustomerDashboard').then(m => ({ default: m.CustomerDashboard })));
-const CustomerIncidents = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
-const CustomerBilling   = lazy(() => import('@/pages/customer/CustomerBilling').then(m => ({ default: m.CustomerBilling })));
-const CustomerVault     = lazy(() => import('@/pages/customer/CustomerVault').then(m => ({ default: m.CustomerVault })));
-const CustomerOnboarding = lazy(() => import('@/pages/customer/CustomerOnboarding').then(m => ({ default: m.CustomerOnboarding })));
-const CustomerSecurity  = lazy(() => import('@/pages/customer/CustomerSecurity').then(m => ({ default: m.CustomerSecurity })));
-const CustomerSettings  = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
+// ── Customer Portal (app.uptimeops.org) ──
+const CustomerOnboarding    = lazy(() => import('@/pages/customer/CustomerOnboarding').then(m => ({ default: m.CustomerOnboarding })));
+const CustomerDashboard     = lazy(() => import('@/pages/customer/CustomerDashboard').then(m => ({ default: m.CustomerDashboard })));
+const CustomerIncidents     = lazy(() => import('@/pages/customer/CustomerIncidents').then(m => ({ default: m.CustomerIncidents })));
+const CustomerPayments      = lazy(() => import('@/pages/customer/CustomerPayments').then(m => ({ default: m.CustomerPayments })));
+const CustomerCredentials   = lazy(() => import('@/pages/customer/CustomerCredentials').then(m => ({ default: m.CustomerCredentials })));
+const CustomerCommunications = lazy(() => import('@/pages/customer/CustomerCommunications').then(m => ({ default: m.CustomerCommunications })));
+const CustomerSecurity      = lazy(() => import('@/pages/customer/CustomerSecurity').then(m => ({ default: m.CustomerSecurity })));
+const CustomerSettings      = lazy(() => import('@/pages/customer/CustomerSettings').then(m => ({ default: m.CustomerSettings })));
 
-// ── Engineer pages (Interface B) ──
+// ── Engineer pages ──
 const EngineerDashboard = lazy(() => import('@/pages/engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
 const EngineerSessions  = lazy(() => import('@/pages/engineer/EngineerSessions').then(m => ({ default: m.EngineerSessions })));
 const EngineerWorkspace = lazy(() => import('@/pages/engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
@@ -59,8 +60,6 @@ export default function App() {
         {/* ═══ PUBLIC ═══ */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
-
-        {/* ═══ AUTH SUITE (50/50 Split Layout) ═══ */}
         <Route path="/login" element={<AuthLayout><AuthConsole /></AuthLayout>} />
         <Route path="/signup" element={<AuthLayout><AuthConsole /></AuthLayout>} />
         <Route path="/forgot-password" element={<AuthLayout><ForgotPassword /></AuthLayout>} />
@@ -70,7 +69,7 @@ export default function App() {
         <Route path="/status" element={<StatusPage />} />
         <Route path="/engineer/onboard" element={<EngineerOnboard />} />
 
-        {/* ═══ HQ PORTAL (Interface C) ═══ */}
+        {/* ═══ HQ PORTAL (dashboard.uptimeops.org) ═══ */}
         <Route element={<CyberLayout portalType="admin" />}>
           <Route path="/hq" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQDashboard /></ProtectedRoute>} />
           <Route path="/hq/incidents" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQIncidents /></ProtectedRoute>} />
@@ -84,18 +83,23 @@ export default function App() {
           <Route path="/hq/settings" element={<ProtectedRoute allowedRoles={['coordinator', 'admin']}><HQSettings /></ProtectedRoute>} />
         </Route>
 
-        {/* ═══ CUSTOMER PORTAL (Interface A) ═══ */}
+        {/* ═══ CUSTOMER PORTAL (app.uptimeops.org) ═══ */}
         <Route element={<CyberLayout portalType="customer" />}>
           <Route path="/customer/onboard" element={<ProtectedRoute allowedRoles={['customer']}><CustomerOnboarding /></ProtectedRoute>} />
           <Route path="/customer" element={<ProtectedRoute allowedRoles={['customer']}><CustomerDashboard /></ProtectedRoute>} />
           <Route path="/customer/incidents" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
-          <Route path="/customer/billing" element={<ProtectedRoute allowedRoles={['customer']}><CustomerBilling /></ProtectedRoute>} />
-          <Route path="/customer/vault" element={<ProtectedRoute allowedRoles={['customer']}><CustomerVault /></ProtectedRoute>} />
+          <Route path="/customer/incidents/:id" element={<ProtectedRoute allowedRoles={['customer']}><CustomerIncidents /></ProtectedRoute>} />
+          <Route path="/customer/payments" element={<ProtectedRoute allowedRoles={['customer']}><CustomerPayments /></ProtectedRoute>} />
+          <Route path="/customer/credentials" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCredentials /></ProtectedRoute>} />
+          <Route path="/customer/communications" element={<ProtectedRoute allowedRoles={['customer']}><CustomerCommunications /></ProtectedRoute>} />
           <Route path="/customer/security" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSecurity /></ProtectedRoute>} />
           <Route path="/customer/settings" element={<ProtectedRoute allowedRoles={['customer']}><CustomerSettings /></ProtectedRoute>} />
+          {/* Legacy redirects */}
+          <Route path="/customer/billing" element={<Navigate to="/customer/payments" replace />} />
+          <Route path="/customer/vault" element={<Navigate to="/customer/credentials" replace />} />
         </Route>
 
-        {/* ═══ ENGINEER PORTAL (Interface B) ═══ */}
+        {/* ═══ ENGINEER PORTAL (engineers.uptimeops.org) ═══ */}
         <Route element={<CyberLayout portalType="engineer" />}>
           <Route path="/engineer" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerDashboard /></ProtectedRoute>} />
           <Route path="/engineer/sessions" element={<ProtectedRoute allowedRoles={['engineer']}><EngineerSessions /></ProtectedRoute>} />
