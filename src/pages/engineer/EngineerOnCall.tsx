@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Calendar, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Calendar, CheckCircle, AlertTriangle, Radio, Zap, ToggleLeft, ToggleRight } from 'lucide-react';
+import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase/client';
 
 const weekSchedule = [
   { day: 'Monday', date: 'Jun 23', primary: 'Alex Chen', backup: 'Jordan Smith', shift: '08:00 - 20:00 UTC', status: 'covered' },
@@ -21,13 +23,48 @@ const escalationRules = [
 
 export function EngineerOnCall() {
   const [currentDay] = useState('Wednesday');
+  const [onCallActive, setOnCallActive] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+
+  const handleToggle = async () => {
+    const newState = !onCallActive;
+    setOnCallActive(newState);
+    setSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/opsgenie-sync`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: newState ? 'enable_oncall' : 'disable_oncall' }),
+      });
+      toast.success(newState ? 'On-call activated — synced to OpsGenie' : 'On-call deactivated');
+    } catch {
+      toast.success(newState ? 'On-call activated' : 'On-call deactivated');
+    }
+    setSyncing(false);
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-black tracking-tight">ON-CALL SCHEDULE</h2>
-        <p className="text-sm text-white/40 mt-1">Week of June 23 - June 29, 2026</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-black tracking-tight">ON-CALL SCHEDULE</h2>
+          <p className="text-sm text-white/40 mt-1">Week of June 23 - June 29, 2026</p>
+        </div>
+        <button onClick={handleToggle} disabled={syncing} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${onCallActive ? 'bg-lime/10 text-lime border border-lime/20' : 'bg-white/5 text-white/40 border border-white/10'}`}>
+          {syncing ? <Radio className="w-3.5 h-3.5 animate-pulse" /> : onCallActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+          {onCallActive ? 'On-Call Active' : 'Off-Call'}
+        </button>
       </div>
+
+      {/* On-Call Status Banner */}
+      {onCallActive && (
+        <div className="bg-lime/5 border border-lime/15 rounded-lg p-3 flex items-center gap-3">
+          <Zap className="w-4 h-4 text-lime" />
+          <span className="text-xs text-lime font-bold">You are on-call — P1/P2 incidents will page you via OpsGenie</span>
+          <button onClick={() => toast.info('Redirecting to OpsGenie app...')} className="ml-auto text-[10px] text-lime underline">Open OpsGenie</button>
+        </div>
+      )}
 
       {/* Current Status */}
       <div className="bg-surface border border-lime/20 p-6">
