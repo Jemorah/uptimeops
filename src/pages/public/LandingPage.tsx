@@ -10,11 +10,15 @@ import ScannerCodeGraph from '@/sections/landing/ScannerCodeGraph';
 import PricingEngine from '@/sections/landing/PricingEngine';
 import VaultPreview from '@/sections/landing/VaultPreview';
 import TrustFooter from '@/sections/landing/TrustFooter';
+import { PortalSwitcher } from '@/components/PortalSwitcher';
 
 export function LandingPage() {
   return (
     <div className="min-h-screen bg-void text-white overflow-x-hidden">
       <Navbar />
+
+      {/* Portal Switcher (visible on preview deployments) */}
+      <PortalSwitcher />
 
       {/* Section 1: Hero Sphere */}
       <HeroSphere />
